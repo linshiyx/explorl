@@ -50,7 +50,6 @@ def process_rollout(rollout, reward_filter, e_reward_filter, gamma, lambda_=1.0,
             rollout.data["rewards"] + [np.array(rollout.last_r)]).squeeze()
         traj["advantages"] = discount(rewards_plus_v, gamma)[:-1]
 
-    print(traj['advantages'].shape)
     for i in range(traj["advantages"].shape[0]):
         # print(type(traj["advantages"][i]))
         # print(traj["advantages"][i])

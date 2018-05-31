@@ -39,13 +39,13 @@ class ProximalPolicyLoss(object):
         self.e_prev_dist = distribution_class(e_prev_logits)
 
         policy_net = VisionNetwork(observations, logit_dim, config["model"])
-        self.curr_logits = policy_net.outputs
+        self.curr_logits = tf.clip_by_value(policy_net.outputs, -100, 100)
         self.curr_dist = distribution_class(self.curr_logits)
         self.sampler = self.curr_dist.sample()
 
 
         # for explore actor
-        self.e_curr_logits = policy_net.last_layer
+        self.e_curr_logits = tf.clip_by_value(policy_net.last_layer, -100, 100)
         self.e_curr_dist = distribution_class(self.e_curr_logits)
         self.e_sampler = self.e_curr_dist.sample()
 

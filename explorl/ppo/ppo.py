@@ -37,9 +37,9 @@ DEFAULT_CONFIG = {
     "sgd_stepsize": 5e-5,
     # TODO(pcm): Expose the choice between gpus and cpus
     # as a command line argument.
-    "devices": ["/cpu:%d" % i for i in range(4)],
+    "devices": ["/cpu:%d" % i for i in range(9)],
     "tf_session_args": {
-        "device_count": {"CPU": 4},
+        "device_count": {"CPU": 9},
         "log_device_placement": False,
         "allow_soft_placement": True,
         "intra_op_parallelism_threads": 1,
@@ -64,12 +64,12 @@ DEFAULT_CONFIG = {
     # If >1, adds frameskip
     "extra_frameskip": 1,
     # Number of timesteps collected in each outer loop
-    "timesteps_per_batch": 1000,
+    "timesteps_per_batch": 4000,
     # Each tasks performs rollouts until at least this
     # number of steps is obtained
     "min_steps_per_task": 500,
     # Number of actors used to collect the rollouts
-    "num_workers": 1,
+    "num_workers": 8,
     # Resource requirements for remote actors
     "worker_resources": {"num_cpus": 1},
     # Dump TensorFlow timeline after this many SGD minibatches
@@ -86,7 +86,7 @@ DEFAULT_CONFIG = {
     # Arguments to pass to the env creator
     "env_config": {},
 
-    'num_batches': 1e6,
+    'num_batches': 1e7,
     'batches_per_save': 20,
     'batches_per_evaluate': 20,
     'num_evaluation': 1,
@@ -201,10 +201,10 @@ class PPOAgent():
             print(info)
 
 
-            if self.global_step // self.config['batches_per_save'] == 0:
+            if self.global_step % self.config['batches_per_save'] == 0:
                 self._save()
 
-            if self.global_step // self.config['batches_per_evaluate'] == 0:
+            if self.global_step % self.config['batches_per_evaluate'] == 0:
                 pl, vl, ent, kl, e_pl, e_vl, e_ent, e_kl, rew, leng = \
                     self.local_evaluator.get_evaluate_metrics()
 
