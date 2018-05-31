@@ -37,9 +37,10 @@ DEFAULT_CONFIG = {
     "sgd_stepsize": 5e-5,
     # TODO(pcm): Expose the choice between gpus and cpus
     # as a command line argument.
-    "devices": ["/cpu:%d" % i for i in range(9)],
+    "devices": ["/cpu:%d" % i for i in range(1)],
+    # "devices": ["/gpu:%d" % i for i in range(0)],
     "tf_session_args": {
-        "device_count": {"CPU": 9},
+        # "device_count": {"CPU": 9},
         "log_device_placement": False,
         "allow_soft_placement": True,
         "intra_op_parallelism_threads": 1,
@@ -69,7 +70,7 @@ DEFAULT_CONFIG = {
     # number of steps is obtained
     "min_steps_per_task": 500,
     # Number of actors used to collect the rollouts
-    "num_workers": 8,
+    "num_workers": 2,
     # Resource requirements for remote actors
     "worker_resources": {"num_cpus": 1},
     # Dump TensorFlow timeline after this many SGD minibatches
