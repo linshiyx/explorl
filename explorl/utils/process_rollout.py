@@ -42,6 +42,8 @@ def process_rollout(rollout, reward_filter, e_reward_filter, gamma, lambda_=1.0,
 
         e_vpred_t = np.stack(
             rollout.data["e_vf_preds"] + [np.array(rollout.e_last_r)]).squeeze()
+        for i in range(1, len(traj["curr_ent"])):
+            traj['curr_ent'][i] = e_reward_filter(traj['curr_ent'][i])
         e_delta_t = np.concatenate([traj["curr_ent"][1:], np.array([0])]) + gamma * e_vpred_t[1:] - e_vpred_t[:-1]
         traj["e_advantages"] = discount(e_delta_t, gamma * lambda_)
         traj["e_value_targets"] = traj["e_advantages"] + traj["e_vf_preds"]
@@ -55,7 +57,7 @@ def process_rollout(rollout, reward_filter, e_reward_filter, gamma, lambda_=1.0,
         # print(traj["advantages"][i])
         traj["advantages"][i] = reward_filter(traj["advantages"][i])
 
-        traj["e_advantages"][i] = e_reward_filter(traj["e_advantages"][i])
+        # traj["e_advantages"][i] = e_reward_filter(traj["e_advantages"][i])
 
     traj["advantages"] = traj["advantages"].copy()
 
