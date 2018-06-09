@@ -1,9 +1,6 @@
-import ray
 import gym
-from ray.tune.registry import ENV_CREATOR, get_registry
-from explorl.ppo.ppo import PPOAgent
 import datetime
-
+from explorl.ppo.ppo import PPOAgent
 
 DEFAULT_CONFIG = {
     # Discount factor of the MDP
@@ -56,7 +53,7 @@ DEFAULT_CONFIG = {
     # number of steps is obtained
     "min_steps_per_task": 500,
     # Number of actors used to collect the rollouts
-    "num_workers": 8,
+    "num_workers": 0,
     # Resource requirements for remote actors
     "worker_resources": {"num_cpus": 1},
     # Dump TensorFlow timeline after this many SGD minibatches
@@ -81,15 +78,8 @@ DEFAULT_CONFIG = {
 }
 
 
-
 env_id = "Alien-v4"
-
-ray.init()
-
-# registry = get_registry()
-# env_creator = registry.get(ENV_CREATOR, env)
-# env_creator = lambda env_config: gym.make(env)
+env = gym.make(env_id)
 
 ppo = PPOAgent(env_id, DEFAULT_CONFIG)
-ppo.run_init_op()
-ppo.train()
+ppo.__restore()
