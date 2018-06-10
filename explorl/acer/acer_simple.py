@@ -235,7 +235,7 @@ class Runner(AbstractEnvRunner):
     def run(self):
         enc_obs = np.split(self.obs, self.nstack, axis=3)  # so now list of obs steps
         mb_obs, mb_actions, mb_mus, mb_dones, mb_rewards = [], [], [], [], []
-        mb_e_vs = []
+        mb_e_vs, mb_e_rewards = [], []
         for _ in range(self.nsteps):
             # actions, mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
             e_actions, mus, e_vs, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
@@ -243,6 +243,7 @@ class Runner(AbstractEnvRunner):
             # mb_actions.append(actions)
             mb_actions.append(e_actions)
             mb_e_vs.append(e_vs)
+            mb_e_rewards.append(-np.sum(mus*np.log(mus + 1e-5), axis=1))
             mb_mus.append(mus)
             mb_dones.append(self.dones)
             # obs, rewards, dones, _ = self.env.step(actions)
@@ -253,8 +254,11 @@ class Runner(AbstractEnvRunner):
             self.update_obs(obs, dones)
             mb_rewards.append(rewards)
             enc_obs.append(obs)
+
+
         mb_obs.append(np.copy(self.obs))
         mb_dones.append(self.dones)
+
 
         enc_obs = np.asarray(enc_obs, dtype=np.uint8).swapaxes(1, 0)
         mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0)
@@ -267,6 +271,10 @@ class Runner(AbstractEnvRunner):
 
         mb_dones = np.asarray(mb_dones, dtype=np.bool).swapaxes(1, 0)
 
+        mb_e_rewards.append(np.zeros(shape=(mus.shape[0]), dtype=np.float))
+        mb_e_rewards.pop(0)
+        mb_e_rewards = np.asarray(mb_e_rewards, dtype=np.float32).swapaxes(1, 0)
+
         mb_masks = mb_dones # Used for statefull models like LSTM's to mask state when done
         mb_dones = mb_dones[:, 1:] # Used for calculating returns. The dones array is now aligned with rewards
 
@@ -275,6 +283,16 @@ class Runner(AbstractEnvRunner):
 
 
         # todo cal entropy as e_r and advantage
+        # for last e_v
+        last_e_actions, last_mus, last_e_vs, last_states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
+        for n, (rewards, dones, value) in enumerate(zip(mb_rewards, mb_dones, last_values)):
+            rewards = rewards.tolist()
+            dones = dones.tolist()
+            if dones[-1] == 0:
+                rewards = discount_with_dones(rewards+[value], dones+[0], self.gamma)[:-1]
+            else:
+                rewards = discount_with_dones(rewards, dones, self.gamma)
+            mb_rewards[n] = rewards
 
         return enc_obs, mb_obs, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks
 
