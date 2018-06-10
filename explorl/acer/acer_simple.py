@@ -13,6 +13,8 @@ from baselines.a2c.utils import cat_entropy_softmax
 from baselines.a2c.utils import EpisodeStats
 from baselines.a2c.utils import get_by_index, check_shape, avg_norm, gradient_add, q_explained_variance
 from explorl.acer.buffer import Buffer
+from baselines.a2c.utils import discount_with_dones
+from baselines.a2c.utils import cat_entropy, mse
 
 import os.path as osp
 
@@ -56,7 +58,7 @@ def q_retrace(R, D, q_i, v, rho_i, nenvs, nsteps, gamma):
 
 class Model(object):
     def __init__(self, policy, ob_space, ac_space, nenvs, nsteps, nstack, num_procs,
-                 ent_coef, q_coef, gamma, max_grad_norm, lr,
+                 ent_coef, q_coef, e_vf_coef, gamma, max_grad_norm, lr,
                  rprop_alpha, rprop_epsilon, total_timesteps, lrschedule,
                  c, trust_region, alpha, delta):
         config = tf.ConfigProto(allow_soft_placement=True,
@@ -75,6 +77,20 @@ class Model(object):
 
         step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, reuse=False)
         train_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, reuse=True)
+
+        # for explore start =================================
+        e_ADV = tf.placeholder(tf.float32, [nbatch])
+        e_R = tf.placeholder(tf.float32, [nbatch])
+        e_neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.e_pi, labels=A)
+        e_pg_loss = tf.reduce_mean(e_ADV * e_neglogpac)
+        e_vf_loss = tf.reduce_mean(mse(tf.squeeze(train_model.e_vf), e_R))
+        # entropy = tf.reduce_mean(cat_entropy(train_model.pi))
+        e_loss = e_pg_loss + e_vf_loss * e_vf_coef
+        e_params = find_trainable_variables("model/explore")
+        e_grads = tf.gradients(e_loss, e_params)
+        if max_grad_norm is not None:
+            e_grads, e_grad_norm = tf.clip_by_global_norm(e_grads, max_grad_norm)
+        # for explore end =================================
 
         params = find_trainable_variables("model")
         print("Params {}".format(len(params)))
@@ -140,7 +156,8 @@ class Model(object):
 
         # Net loss
         check_shape([loss_policy, loss_q, entropy], [[]] * 3)
-        loss = loss_policy + q_coef * loss_q - ent_coef * entropy
+        # loss = loss_policy + q_coef * loss_q - ent_coef * entropy
+        loss = loss_policy + q_coef * loss_q + e_loss
 
         if trust_region:
             g = tf.gradients(- (loss_policy - ent_coef * entropy) * nsteps * nenvs, f) #[nenvs * nsteps, nact]
@@ -169,6 +186,11 @@ class Model(object):
 
         if max_grad_norm is not None:
             grads, norm_grads = tf.clip_by_global_norm(grads, max_grad_norm)
+
+        # add explore grads
+        grads.extend(e_grads)
+        params.extend(e_params)
+
         grads = list(zip(grads, params))
         trainer = tf.train.RMSPropOptimizer(learning_rate=LR, decay=rprop_alpha, epsilon=rprop_epsilon)
         _opt_op = trainer.apply_gradients(grads)
@@ -189,7 +211,7 @@ class Model(object):
             names_ops = names_ops + ['norm_grads_q', 'norm_grads_policy', 'avg_norm_grads_f', 'avg_norm_k', 'avg_norm_g',
                                      'avg_norm_k_dot_g', 'avg_norm_adj']
 
-        def train(obs, actions, rewards, dones, mus, states, masks, steps):
+        def train(obs, actions, rewards, dones, mus, states, masks, steps, e_returns, e_advs):
             cur_lr = lr.value_steps(steps)
             td_map = {train_model.X: obs, polyak_model.X: obs, A: actions, R: rewards, D: dones, MU: mus, LR: cur_lr}
             if states != []:
@@ -197,7 +219,7 @@ class Model(object):
                 td_map[train_model.M] = masks
                 td_map[polyak_model.S] = states
                 td_map[polyak_model.M] = masks
-            return names_ops, sess.run(run_ops, td_map)[1:]  # strip off _train
+            return names_ops, sess.run(run_ops, td_map)[1:], [e_pg_loss, e_vf_loss]  # strip off _train
 
         def save(save_path):
             ps = sess.run(params)
@@ -213,8 +235,9 @@ class Model(object):
         tf.global_variables_initializer().run(session=sess)
 
 class Runner(AbstractEnvRunner):
-    def __init__(self, env, model, nsteps, nstack):
+    def __init__(self, env, model, nsteps, nstack, gamma):
         super().__init__(env=env, model=model, nsteps=nsteps)
+        self.gamma = gamma
         self.nstack = nstack
         nh, nw, nc = env.observation_space.shape
         self.nc = nc  # nc = 1 for atari, but just in case
@@ -282,19 +305,20 @@ class Runner(AbstractEnvRunner):
         # When pulling from buffer, arrays will now be reshaped in place, preventing a deep copy.
 
 
-        # todo cal entropy as e_r and advantage
         # for last e_v
+        mb_e_returns = np.zeros(shape=mb_rewards.shape, dtype=np.float32)
         last_e_actions, last_mus, last_e_vs, last_states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
-        for n, (rewards, dones, value) in enumerate(zip(mb_rewards, mb_dones, last_values)):
+        for n, (rewards, dones, value) in enumerate(zip(mb_e_rewards, mb_dones, last_e_vs)):
             rewards = rewards.tolist()
             dones = dones.tolist()
             if dones[-1] == 0:
                 rewards = discount_with_dones(rewards+[value], dones+[0], self.gamma)[:-1]
             else:
                 rewards = discount_with_dones(rewards, dones, self.gamma)
-            mb_rewards[n] = rewards
+            mb_e_returns[n] = rewards
+        mb_e_advs = mb_e_returns - mb_e_vs
 
-        return enc_obs, mb_obs, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks
+        return enc_obs, mb_obs, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks, mb_e_returns, mb_e_advs
 
 class Acer():
     def __init__(self, runner, model, buffer, log_interval):
@@ -309,7 +333,8 @@ class Acer():
     def call(self, on_policy):
         runner, model, buffer, steps = self.runner, self.model, self.buffer, self.steps
         if on_policy:
-            enc_obs, obs, actions, rewards, mus, dones, masks = runner.run()
+            # enc_obs, obs, actions, rewards, mus, dones, masks = runner.run()
+            enc_obs, obs, actions, rewards, mus, dones, masks, e_returns, e_advs = runner.run()
             self.episode_stats.feed(rewards, dones)
             if buffer is not None:
                 buffer.put(enc_obs, actions, rewards, mus, dones, masks)
@@ -325,7 +350,10 @@ class Acer():
         dones = dones.reshape([runner.nbatch])
         masks = masks.reshape([runner.batch_ob_shape[0]])
 
-        names_ops, values_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps)
+        e_returns = e_returns.reshape([runner.nbatch])
+        e_advs = e_advs.reshape([runner.nbatch])
+
+        names_ops, values_ops, explore_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps, e_returns, e_advs)
 
         if on_policy and (int(steps/runner.nbatch) % self.log_interval == 0):
             logger.record_tabular("total_timesteps", steps)
@@ -337,6 +365,10 @@ class Acer():
             logger.record_tabular("mean_episode_reward", self.episode_stats.mean_reward())
             for name, val in zip(names_ops, values_ops):
                 logger.record_tabular(name, float(val))
+
+            logger.record_tabular("explore_policy_loss", float(explore_ops[0]))
+            logger.record_tabular("explore_value_loss", float(explore_ops[1]))
+
             logger.dump_tabular()
 
 
@@ -359,7 +391,7 @@ def learn(policy, env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_c
                   total_timesteps=total_timesteps, lrschedule=lrschedule, c=c,
                   trust_region=trust_region, alpha=alpha, delta=delta)
 
-    runner = Runner(env=env, model=model, nsteps=nsteps, nstack=nstack)
+    runner = Runner(env=env, model=model, nsteps=nsteps, nstack=nstack, gamma=gamma)
     if replay_ratio > 0:
         buffer = Buffer(env=env, nsteps=nsteps, nstack=nstack, size=buffer_size)
     else:

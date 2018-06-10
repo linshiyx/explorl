@@ -13,16 +13,18 @@ class AcerCnnPolicy(object):
         nact = ac_space.n
         X = tf.placeholder(tf.uint8, ob_shape)  # obs
         with tf.variable_scope("model", reuse=reuse):
-            h = nature_cnn(X)
-            pi_logits = fc(h, 'pi', nact, init_scale=0.01)
-            pi = tf.nn.softmax(pi_logits)
-            q = fc(h, 'q', nact)
+            with tf.variable_scope("acer"):
+                h = nature_cnn(X)
+                pi_logits = fc(h, 'pi', nact, init_scale=0.01)
+                pi = tf.nn.softmax(pi_logits)
+                q = fc(h, 'q', nact)
 
-            # for explore
-            nogradient_h = tf.stop_gradient(h)
-            e_pi_logits = fc(nogradient_h, 'e_pi', nact, init_scale=0.01)
-            e_pi = tf.nn.softmax(e_pi_logits)
-            e_v = fc(nogradient_h, 'e_v', 1)
+            with tf.variable_scope("explore"):
+                # for explore
+                nogradient_h = tf.stop_gradient(h)
+                e_pi_logits = fc(nogradient_h, 'e_pi', nact, init_scale=0.01)
+                e_pi = tf.nn.softmax(e_pi_logits)
+                e_v = fc(nogradient_h, 'e_v', 1)
 
         a = sample(pi_logits)  # could change this to use self.pi instead
 
