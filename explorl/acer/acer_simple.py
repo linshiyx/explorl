@@ -81,18 +81,23 @@ class Model(object):
         # for explore start =================================
         e_ADV = tf.placeholder(tf.float32, [nbatch])
         e_R = tf.placeholder(tf.float32, [nbatch])
-        e_neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.e_pi, labels=A)
+        e_pi_logits , e_v = map(lambda var: strip(var, nenvs, nsteps), [train_model.e_pi_logits, train_model.e_v])
+        e_neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=e_pi_logits, labels=A)
         e_pg_loss = tf.reduce_mean(e_ADV * e_neglogpac)
-        e_vf_loss = tf.reduce_mean(mse(tf.squeeze(train_model.e_vf), e_R))
+        e_vf_loss = tf.reduce_mean(mse(tf.squeeze(e_v), e_R))
         # entropy = tf.reduce_mean(cat_entropy(train_model.pi))
         e_loss = e_pg_loss + e_vf_loss * e_vf_coef
-        e_params = find_trainable_variables("model/explore")
+        # e_params = find_trainable_variables("model/explore")
+        with tf.variable_scope('model'):
+            e_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='model/explore')
         e_grads = tf.gradients(e_loss, e_params)
         if max_grad_norm is not None:
             e_grads, e_grad_norm = tf.clip_by_global_norm(e_grads, max_grad_norm)
         # for explore end =================================
 
-        params = find_trainable_variables("model")
+        # params = find_trainable_variables("model/acer")
+        with tf.variable_scope('model'):
+            params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='model/acer')
         print("Params {}".format(len(params)))
         for var in params:
             print(var)
@@ -102,9 +107,14 @@ class Model(object):
         ema_apply_op = ema.apply(params)
 
         def custom_getter(getter, *args, **kwargs):
-            v = ema.average(getter(*args, **kwargs))
-            print(v.name)
-            return v
+            v0 = getter(*args, **kwargs)
+            v = ema.average(v0)
+            # v = ema.average(getter(*args, **kwargs))
+            if v is None:
+                return v0
+            else:
+                print(v.name)
+                return v
 
         with tf.variable_scope("", custom_getter=custom_getter, reuse=True):
             polyak_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, reuse=True)
@@ -207,19 +217,20 @@ class Model(object):
                      'norm_grads']
         if trust_region:
             run_ops = run_ops + [norm_grads_q, norm_grads_policy, avg_norm_grads_f, avg_norm_k, avg_norm_g, avg_norm_k_dot_g,
-                                 avg_norm_adj]
+                                 avg_norm_adj, e_pg_loss, e_vf_loss]
             names_ops = names_ops + ['norm_grads_q', 'norm_grads_policy', 'avg_norm_grads_f', 'avg_norm_k', 'avg_norm_g',
-                                     'avg_norm_k_dot_g', 'avg_norm_adj']
+                                     'avg_norm_k_dot_g', 'avg_norm_adj', 'e_pg_loss', 'e_vf_loss']
 
         def train(obs, actions, rewards, dones, mus, states, masks, steps, e_returns, e_advs):
             cur_lr = lr.value_steps(steps)
-            td_map = {train_model.X: obs, polyak_model.X: obs, A: actions, R: rewards, D: dones, MU: mus, LR: cur_lr}
+            td_map = {train_model.X: obs, polyak_model.X: obs, A: actions, R: rewards, D: dones, MU: mus, LR: cur_lr,
+                      e_R: e_returns, e_ADV: e_advs}
             if states != []:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
                 td_map[polyak_model.S] = states
                 td_map[polyak_model.M] = masks
-            return names_ops, sess.run(run_ops, td_map)[1:], [e_pg_loss, e_vf_loss]  # strip off _train
+            return names_ops, sess.run(run_ops, td_map)[1:]  # strip off _train
 
         def save(save_path):
             ps = sess.run(params)
@@ -231,6 +242,7 @@ class Model(object):
         self.train_model = train_model
         self.step_model = step_model
         self.step = step_model.step
+        self.e_step = step_model.e_step
         self.initial_state = step_model.initial_state
         tf.global_variables_initializer().run(session=sess)
 
@@ -287,7 +299,7 @@ class Runner(AbstractEnvRunner):
         mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0)
         mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0)
 
-        mb_values = np.asarray(mb_e_vs, dtype=np.float32).swapaxes(1, 0)
+        mb_e_vs = np.asarray(mb_e_vs, dtype=np.float32).swapaxes(1, 0)
 
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0)
         mb_mus = np.asarray(mb_mus, dtype=np.float32).swapaxes(1, 0)
@@ -353,7 +365,7 @@ class Acer():
         e_returns = e_returns.reshape([runner.nbatch])
         e_advs = e_advs.reshape([runner.nbatch])
 
-        names_ops, values_ops, explore_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps, e_returns, e_advs)
+        names_ops, values_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps, e_returns, e_advs)
 
         if on_policy and (int(steps/runner.nbatch) % self.log_interval == 0):
             logger.record_tabular("total_timesteps", steps)
@@ -365,10 +377,6 @@ class Acer():
             logger.record_tabular("mean_episode_reward", self.episode_stats.mean_reward())
             for name, val in zip(names_ops, values_ops):
                 logger.record_tabular(name, float(val))
-
-            logger.record_tabular("explore_policy_loss", float(explore_ops[0]))
-            logger.record_tabular("explore_value_loss", float(explore_ops[1]))
-
             logger.dump_tabular()
 
 
@@ -386,7 +394,7 @@ def learn(policy, env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_c
     ac_space = env.action_space
     num_procs = len(env.remotes) # HACK
     model = Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nenvs=nenvs, nsteps=nsteps, nstack=nstack,
-                  num_procs=num_procs, ent_coef=ent_coef, q_coef=q_coef, gamma=gamma,
+                  num_procs=num_procs, ent_coef=ent_coef, q_coef=q_coef, e_vf_coef=q_coef, gamma=gamma,
                   max_grad_norm=max_grad_norm, lr=lr, rprop_alpha=rprop_alpha, rprop_epsilon=rprop_epsilon,
                   total_timesteps=total_timesteps, lrschedule=lrschedule, c=c,
                   trust_region=trust_region, alpha=alpha, delta=delta)

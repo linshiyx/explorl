@@ -24,7 +24,7 @@ def main():
     args = parser.parse_args()
     logger.configure(args.logdir)
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
-          policy=args.policy, lrschedule=args.lrschedule, num_cpu=16)
+          policy=args.policy, lrschedule=args.lrschedule, num_cpu=2)
 
 if __name__ == '__main__':
     main()

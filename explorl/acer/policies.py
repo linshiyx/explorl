@@ -24,7 +24,7 @@ class AcerCnnPolicy(object):
                 nogradient_h = tf.stop_gradient(h)
                 e_pi_logits = fc(nogradient_h, 'e_pi', nact, init_scale=0.01)
                 e_pi = tf.nn.softmax(e_pi_logits)
-                e_v = fc(nogradient_h, 'e_v', 1)
+                e_v = fc(nogradient_h, 'e_v', 1)[:, 0]
 
         a = sample(pi_logits)  # could change this to use self.pi instead
 
@@ -35,6 +35,7 @@ class AcerCnnPolicy(object):
 
         # for explore
         e_a = sample(e_pi_logits)  # could change this to use self.pi instead
+        self.e_pi_logits = e_pi_logits
         self.e_pi = e_pi
         self.e_v = e_v
 
