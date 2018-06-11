@@ -333,20 +333,27 @@ class Runner(AbstractEnvRunner):
         return enc_obs, mb_obs, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks, mb_e_returns, mb_e_advs
 
     def evaluate(self, env):
-        # todo confirm shape
         done = False
+        nh, nw, nc = env.observation_space.shape
+        e_obs = np.zeros((self.nenv, nh, nw, nc * self.nstack), dtype=np.uint8)
         obs = env.reset()
+        obs = np.concatenate([obs]*self.nenv, axis=0)
+        e_obs = np.roll(e_obs, shift=-self.nc, axis=3)
+        e_obs[:, :, :, -self.nc:] = obs[:, :, :, :]
         reward_episode = 0
         length_episode = 0
         while not done:
-            action = self.model.step(obs)
-            obs, rew, done, info = env.step(action)
+            action = self.model.step(e_obs)
+            obs, rew, done, info = env.step(action[0])
+            obs = np.concatenate([obs]*self.nenv, axis=0)
+            e_obs = np.roll(e_obs, shift=-self.nc, axis=3)
+            e_obs[:, :, :, -self.nc:] = obs[:, :, :, :]
             reward_episode += rew
             length_episode += 1
         return reward_episode ,length_episode
 
 class Acer():
-    def __init__(self, runner, model, buffer, log_interval):
+    def __init__(self, runner, model, buffer, log_interval, evaluate_env, evaluate_interval, evaluate_n):
         self.runner = runner
         self.model = model
         self.buffer = buffer
@@ -354,6 +361,10 @@ class Acer():
         self.tstart = None
         self.episode_stats = EpisodeStats(runner.nsteps, runner.nenv)
         self.steps = None
+
+        self.evaluate_env = evaluate_env
+        self.evaluate_interval = evaluate_interval
+        self.evaluate_n = evaluate_n
 
     def call(self, on_policy):
         runner, model, buffer, steps = self.runner, self.model, self.buffer, self.steps
@@ -380,14 +391,20 @@ class Acer():
 
         names_ops, values_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps, e_returns, e_advs)
 
+        if on_policy and (int(steps/runner.nbatch) % self.evaluate_interval== 0):
+            rewards_mean, length_mean = self.evaluate(self.evaluate_env, self.evaluate_n)
+            logger.record_tabular("mean_episode_length", rewards_mean)
+            logger.record_tabular("mean_episode_reward", length_mean)
+
+
         if on_policy and (int(steps/runner.nbatch) % self.log_interval == 0):
             logger.record_tabular("total_timesteps", steps)
             logger.record_tabular("fps", int(steps/(time.time() - self.tstart)))
             # IMP: In EpisodicLife env, during training, we get done=True at each loss of life, not just at the terminal state.
             # Thus, this is mean until end of life, not end of episode.
             # For true episode rewards, see the monitor files in the log folder.
-            logger.record_tabular("mean_episode_length", self.episode_stats.mean_length())
-            logger.record_tabular("mean_episode_reward", self.episode_stats.mean_reward())
+            # logger.record_tabular("mean_episode_length", self.episode_stats.mean_length())
+            # logger.record_tabular("mean_episode_reward", self.episode_stats.mean_reward())
             for name, val in zip(names_ops, values_ops):
                 logger.record_tabular(name, float(val))
             logger.dump_tabular()
@@ -430,11 +447,10 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
     else:
         buffer = None
     nbatch = nenvs*nsteps
-    acer = Acer(runner, model, buffer, log_interval)
+    acer = Acer(runner, model, buffer, log_interval, evaluate_env, 1000, 1)
     acer.tstart = time.time()
     for acer.steps in range(0, total_timesteps, nbatch): #nbatch samples, 1 on_policy call and multiple off-policy calls
         acer.call(on_policy=True)
-        acer.evaluate()
         # if replay_ratio > 0 and buffer.has_atleast(replay_start):
         #     n = np.random.poisson(replay_ratio)
         #     for _ in range(n):
