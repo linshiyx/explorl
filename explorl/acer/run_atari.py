@@ -6,6 +6,7 @@ from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 
 def train(env_id, num_timesteps, seed, policy, lrschedule, num_cpu):
     env = make_atari_env(env_id, num_cpu, seed)
+    evaluate_env = make_atari_env(env_id, 1, seed, start_index=100)
     if policy == 'cnn':
         policy_fn = AcerCnnPolicy
     elif policy == 'lstm':
@@ -13,7 +14,7 @@ def train(env_id, num_timesteps, seed, policy, lrschedule, num_cpu):
     else:
         print("Policy {} not implemented".format(policy))
         return
-    learn(policy_fn, env, seed, total_timesteps=int(num_timesteps * 1.1), lrschedule=lrschedule)
+    learn(policy_fn, env, evaluate_env, seed, total_timesteps=int(num_timesteps * 1.1), lrschedule=lrschedule)
     env.close()
 
 def main():

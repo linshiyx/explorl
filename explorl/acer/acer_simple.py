@@ -332,6 +332,19 @@ class Runner(AbstractEnvRunner):
 
         return enc_obs, mb_obs, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks, mb_e_returns, mb_e_advs
 
+    def evaluate(self, env):
+        # todo confirm shape
+        done = False
+        obs = env.reset()
+        reward_episode = 0
+        length_episode = 0
+        while not done:
+            action = self.model.step(obs)
+            obs, rew, done, info = env.step(action)
+            reward_episode += rew
+            length_episode += 1
+        return reward_episode ,length_episode
+
 class Acer():
     def __init__(self, runner, model, buffer, log_interval):
         self.runner = runner
@@ -379,8 +392,20 @@ class Acer():
                 logger.record_tabular(name, float(val))
             logger.dump_tabular()
 
+    def evaluate(self, env, n):
+        reward_total = 0
+        length_total = 0
+        for i in range(n):
+            reward_episode, length_episode = self.runner.evaluate(env)
+            reward_total += reward_episode
+            length_total += length_episode
 
-def learn(policy, env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_coef=0.5, ent_coef=0.01,
+        reward_mean = reward_total / n
+        length_mean = length_total / n
+        return reward_mean, length_mean
+
+
+def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_coef=0.5, ent_coef=0.01,
           max_grad_norm=10, lr=7e-4, lrschedule='linear', rprop_epsilon=1e-5, rprop_alpha=0.99, gamma=0.99,
           log_interval=100, buffer_size=50000, replay_ratio=4, replay_start=10000, c=10.0,
           trust_region=True, alpha=0.99, delta=1):
@@ -409,6 +434,7 @@ def learn(policy, env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_c
     acer.tstart = time.time()
     for acer.steps in range(0, total_timesteps, nbatch): #nbatch samples, 1 on_policy call and multiple off-policy calls
         acer.call(on_policy=True)
+        acer.evaluate()
         # if replay_ratio > 0 and buffer.has_atleast(replay_start):
         #     n = np.random.poisson(replay_ratio)
         #     for _ in range(n):
