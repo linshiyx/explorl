@@ -353,7 +353,7 @@ class Runner(AbstractEnvRunner):
         return reward_episode ,length_episode
 
 class Acer():
-    def __init__(self, runner, model, buffer, log_interval, evaluate_env, evaluate_interval, evaluate_n, summary_writer):
+    def __init__(self, runner, model, buffer, log_interval, evaluate_env, evaluate_interval, evaluate_n, logdir):
         self.runner = runner
         self.model = model
         self.buffer = buffer
@@ -366,7 +366,12 @@ class Acer():
         self.evaluate_interval = evaluate_interval
         self.evaluate_n = evaluate_n
 
-        self.summary_writer = summary_writer
+        if logdir:
+            self.summary_writer = tf.summary.FileWriter(logdir=logdir)
+            self.logdir=logdir
+            self.best_mean_reward = 0
+        else:
+            self.summary_writer = None
 
     def call(self, on_policy):
         runner, model, buffer, steps = self.runner, self.model, self.buffer, self.steps
@@ -402,6 +407,10 @@ class Acer():
                 tf.Summary.Value(tag="length_mean", simple_value=length_mean),
             ],)
             self.summary_writer.add_summary(stats, steps)
+
+            if rewards_mean > self.best_mean_reward:
+                self.best_mean_reward = rewards_mean
+                self.model.save(self.logdir + '/' + str(steps // 1e4) + '_' + str(rewards_mean))
 
 
         if on_policy and (int(steps/runner.nbatch) % self.log_interval == 0):
@@ -455,12 +464,8 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
         buffer = None
     nbatch = nenvs*nsteps
 
-    if logdir:
-        summary_writer = tf.summary.FileWriter(logdir=logdir)
-    else:
-        summary_writer = None
 
-    acer = Acer(runner, model, buffer, log_interval, evaluate_env, 1e6//nsteps//nenvs, 20, summary_writer)
+    acer = Acer(runner, model, buffer, log_interval, evaluate_env, 1e6//nsteps//nenvs, 20, logdir)
     acer.tstart = time.time()
     for acer.steps in range(0, total_timesteps, nbatch): #nbatch samples, 1 on_policy call and multiple off-policy calls
         acer.call(on_policy=True)
