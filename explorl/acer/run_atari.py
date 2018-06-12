@@ -23,7 +23,7 @@ def main():
     parser = atari_arg_parser()
     parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm'], default='cnn')
     parser.add_argument('--lrschedule', help='Learning rate schedule', choices=['constant', 'linear'], default='constant')
-    parser.add_argument('--logdir', help ='Directory for logging')
+    # parser.add_argument('--logdir', help ='Directory for logging')
     args = parser.parse_args()
     # logger.configure(args.logdir)
     logdir = './logs/'+datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d-%H%M%S')
