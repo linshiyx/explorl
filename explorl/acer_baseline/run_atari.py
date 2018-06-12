@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from baselines import logger
-from explorl.acer.acer_simple import learn
-from explorl.acer.policies import AcerCnnPolicy, AcerLstmPolicy
+from explorl.acer_baseline.acer_simple import learn
+from explorl.acer_baseline.policies import AcerCnnPolicy, AcerLstmPolicy
 from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 import datetime
 
@@ -23,15 +23,11 @@ def main():
     parser = atari_arg_parser()
     parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm'], default='cnn')
     parser.add_argument('--lrschedule', help='Learning rate schedule', choices=['constant', 'linear'], default='constant')
-    # parser.add_argument('--logdir', help ='Directory for logging')
     args = parser.parse_args()
-    # logger.configure(args.logdir)
     logdir = './logs/'+datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d-%H%M%S')
     logger.configure(logdir)
     train(args.env, num_timesteps=1e8, seed=args.seed,
           policy=args.policy, lrschedule=args.lrschedule, num_cpu=2, logdir=logdir)
-    # train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
-    #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16)
 
 if __name__ == '__main__':
     main()

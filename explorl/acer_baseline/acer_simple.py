@@ -12,9 +12,7 @@ from baselines.a2c.utils import Scheduler, make_path, find_trainable_variables
 from baselines.a2c.utils import cat_entropy_softmax
 from baselines.a2c.utils import EpisodeStats
 from baselines.a2c.utils import get_by_index, check_shape, avg_norm, gradient_add, q_explained_variance
-from explorl.acer.buffer import Buffer
-from baselines.a2c.utils import discount_with_dones
-from baselines.a2c.utils import cat_entropy, mse
+from explorl.acer_baseline.buffer import Buffer
 
 import os.path as osp
 
@@ -58,7 +56,7 @@ def q_retrace(R, D, q_i, v, rho_i, nenvs, nsteps, gamma):
 
 class Model(object):
     def __init__(self, policy, ob_space, ac_space, nenvs, nsteps, nstack, num_procs,
-                 ent_coef, q_coef, e_vf_coef, gamma, max_grad_norm, lr,
+                 ent_coef, q_coef, gamma, max_grad_norm, lr,
                  rprop_alpha, rprop_epsilon, total_timesteps, lrschedule,
                  c, trust_region, alpha, delta):
         config = tf.ConfigProto(allow_soft_placement=True,
@@ -78,26 +76,7 @@ class Model(object):
         step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, reuse=False)
         train_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, reuse=True)
 
-        # for explore start =================================
-        e_ADV = tf.placeholder(tf.float32, [nbatch])
-        e_R = tf.placeholder(tf.float32, [nbatch])
-        e_pi_logits , e_v = map(lambda var: strip(var, nenvs, nsteps), [train_model.e_pi_logits, train_model.e_v])
-        e_neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=e_pi_logits, labels=A)
-        e_pg_loss = tf.reduce_mean(e_ADV * e_neglogpac)
-        e_vf_loss = tf.reduce_mean(mse(tf.squeeze(e_v), e_R))
-        # entropy = tf.reduce_mean(cat_entropy(train_model.pi))
-        e_loss = e_pg_loss + e_vf_loss * e_vf_coef
-        # e_params = find_trainable_variables("model/explore")
-        with tf.variable_scope('model'):
-            e_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='model/explore')
-        e_grads = tf.gradients(e_loss, e_params)
-        if max_grad_norm is not None:
-            e_grads, e_grad_norm = tf.clip_by_global_norm(e_grads, max_grad_norm)
-        # for explore end =================================
-
-        # params = find_trainable_variables("model/acer")
-        with tf.variable_scope('model'):
-            params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='model/acer')
+        params = find_trainable_variables("model")
         print("Params {}".format(len(params)))
         for var in params:
             print(var)
@@ -107,14 +86,9 @@ class Model(object):
         ema_apply_op = ema.apply(params)
 
         def custom_getter(getter, *args, **kwargs):
-            v0 = getter(*args, **kwargs)
-            v = ema.average(v0)
-            # v = ema.average(getter(*args, **kwargs))
-            if v is None:
-                return v0
-            else:
-                print(v.name)
-                return v
+            v = ema.average(getter(*args, **kwargs))
+            print(v.name)
+            return v
 
         with tf.variable_scope("", custom_getter=custom_getter, reuse=True):
             polyak_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, reuse=True)
@@ -166,8 +140,7 @@ class Model(object):
 
         # Net loss
         check_shape([loss_policy, loss_q, entropy], [[]] * 3)
-        # loss = loss_policy + q_coef * loss_q - ent_coef * entropy
-        loss = loss_policy + q_coef * loss_q + e_loss
+        loss = loss_policy + q_coef * loss_q - ent_coef * entropy
 
         if trust_region:
             g = tf.gradients(- (loss_policy - ent_coef * entropy) * nsteps * nenvs, f) #[nenvs * nsteps, nact]
@@ -196,11 +169,6 @@ class Model(object):
 
         if max_grad_norm is not None:
             grads, norm_grads = tf.clip_by_global_norm(grads, max_grad_norm)
-
-        # add explore grads
-        grads.extend(e_grads)
-        params.extend(e_params)
-
         grads = list(zip(grads, params))
         trainer = tf.train.RMSPropOptimizer(learning_rate=LR, decay=rprop_alpha, epsilon=rprop_epsilon)
         _opt_op = trainer.apply_gradients(grads)
@@ -217,14 +185,13 @@ class Model(object):
                      'norm_grads']
         if trust_region:
             run_ops = run_ops + [norm_grads_q, norm_grads_policy, avg_norm_grads_f, avg_norm_k, avg_norm_g, avg_norm_k_dot_g,
-                                 avg_norm_adj, e_pg_loss, e_vf_loss]
+                                 avg_norm_adj]
             names_ops = names_ops + ['norm_grads_q', 'norm_grads_policy', 'avg_norm_grads_f', 'avg_norm_k', 'avg_norm_g',
-                                     'avg_norm_k_dot_g', 'avg_norm_adj', 'e_pg_loss', 'e_vf_loss']
+                                     'avg_norm_k_dot_g', 'avg_norm_adj']
 
-        def train(obs, actions, rewards, dones, mus, states, masks, steps, e_returns, e_advs):
+        def train(obs, actions, rewards, dones, mus, states, masks, steps):
             cur_lr = lr.value_steps(steps)
-            td_map = {train_model.X: obs, polyak_model.X: obs, A: actions, R: rewards, D: dones, MU: mus, LR: cur_lr,
-                      e_R: e_returns, e_ADV: e_advs}
+            td_map = {train_model.X: obs, polyak_model.X: obs, A: actions, R: rewards, D: dones, MU: mus, LR: cur_lr}
             if states != []:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
@@ -242,14 +209,12 @@ class Model(object):
         self.train_model = train_model
         self.step_model = step_model
         self.step = step_model.step
-        self.e_step = step_model.e_step
         self.initial_state = step_model.initial_state
         tf.global_variables_initializer().run(session=sess)
 
 class Runner(AbstractEnvRunner):
-    def __init__(self, env, model, nsteps, nstack, gamma):
+    def __init__(self, env, model, nsteps, nstack):
         super().__init__(env=env, model=model, nsteps=nsteps)
-        self.gamma = gamma
         self.nstack = nstack
         nh, nw, nc = env.observation_space.shape
         self.nc = nc  # nc = 1 for atari, but just in case
@@ -270,45 +235,29 @@ class Runner(AbstractEnvRunner):
     def run(self):
         enc_obs = np.split(self.obs, self.nstack, axis=3)  # so now list of obs steps
         mb_obs, mb_actions, mb_mus, mb_dones, mb_rewards = [], [], [], [], []
-        mb_e_vs, mb_e_rewards = [], []
         for _ in range(self.nsteps):
-            # actions, mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
-            e_actions, mus, e_vs, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
+            actions, mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
             mb_obs.append(np.copy(self.obs))
-            # mb_actions.append(actions)
-            mb_actions.append(e_actions)
-            mb_e_vs.append(e_vs)
-            mb_e_rewards.append(-np.sum(mus*np.log(mus + 1e-5), axis=1))
+            mb_actions.append(actions)
             mb_mus.append(mus)
             mb_dones.append(self.dones)
-            # obs, rewards, dones, _ = self.env.step(actions)
-            obs, rewards, dones, _ = self.env.step(e_actions)
+            obs, rewards, dones, _ = self.env.step(actions)
             # states information for statefull models like LSTM
             self.states = states
             self.dones = dones
             self.update_obs(obs, dones)
             mb_rewards.append(rewards)
             enc_obs.append(obs)
-
-
         mb_obs.append(np.copy(self.obs))
         mb_dones.append(self.dones)
-
 
         enc_obs = np.asarray(enc_obs, dtype=np.uint8).swapaxes(1, 0)
         mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0)
         mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0)
-
-        mb_e_vs = np.asarray(mb_e_vs, dtype=np.float32).swapaxes(1, 0)
-
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0)
         mb_mus = np.asarray(mb_mus, dtype=np.float32).swapaxes(1, 0)
 
         mb_dones = np.asarray(mb_dones, dtype=np.bool).swapaxes(1, 0)
-
-        mb_e_rewards.append(np.zeros(shape=(mus.shape[0]), dtype=np.float))
-        mb_e_rewards.pop(0)
-        mb_e_rewards = np.asarray(mb_e_rewards, dtype=np.float32).swapaxes(1, 0)
 
         mb_masks = mb_dones # Used for statefull models like LSTM's to mask state when done
         mb_dones = mb_dones[:, 1:] # Used for calculating returns. The dones array is now aligned with rewards
@@ -316,21 +265,7 @@ class Runner(AbstractEnvRunner):
         # shapes are now [nenv, nsteps, []]
         # When pulling from buffer, arrays will now be reshaped in place, preventing a deep copy.
 
-
-        # for last e_v
-        mb_e_returns = np.zeros(shape=mb_rewards.shape, dtype=np.float32)
-        last_e_actions, last_mus, last_e_vs, last_states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
-        for n, (rewards, dones, value) in enumerate(zip(mb_e_rewards, mb_dones, last_e_vs)):
-            rewards = rewards.tolist()
-            dones = dones.tolist()
-            if dones[-1] == 0:
-                rewards = discount_with_dones(rewards+[value], dones+[0], self.gamma)[:-1]
-            else:
-                rewards = discount_with_dones(rewards, dones, self.gamma)
-            mb_e_returns[n] = rewards
-        mb_e_advs = mb_e_returns - mb_e_vs
-
-        return enc_obs, mb_obs, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks, mb_e_returns, mb_e_advs
+        return enc_obs, mb_obs, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks
 
     def evaluate(self, env):
         done = False
@@ -376,8 +311,7 @@ class Acer():
     def call(self, on_policy):
         runner, model, buffer, steps = self.runner, self.model, self.buffer, self.steps
         if on_policy:
-            # enc_obs, obs, actions, rewards, mus, dones, masks = runner.run()
-            enc_obs, obs, actions, rewards, mus, dones, masks, e_returns, e_advs = runner.run()
+            enc_obs, obs, actions, rewards, mus, dones, masks = runner.run()
             self.episode_stats.feed(rewards, dones)
             if buffer is not None:
                 buffer.put(enc_obs, actions, rewards, mus, dones, masks)
@@ -393,25 +327,7 @@ class Acer():
         dones = dones.reshape([runner.nbatch])
         masks = masks.reshape([runner.batch_ob_shape[0]])
 
-        e_returns = e_returns.reshape([runner.nbatch])
-        e_advs = e_advs.reshape([runner.nbatch])
-
-        names_ops, values_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps, e_returns, e_advs)
-
-        if on_policy and (int(steps/runner.nbatch) % self.evaluate_interval== 0) and self.summary_writer:
-            rewards_mean, length_mean = self.evaluate(self.evaluate_env, self.evaluate_n)
-            # logger.record_tabular("mean_episode_length", rewards_mean)
-            # logger.record_tabular("mean_episode_reward", length_mean)
-            stats = tf.Summary(value=[
-                tf.Summary.Value(tag="reward_mean", simple_value=rewards_mean),
-                tf.Summary.Value(tag="length_mean", simple_value=length_mean),
-            ],)
-            self.summary_writer.add_summary(stats, steps)
-
-            if rewards_mean > self.best_mean_reward:
-                self.best_mean_reward = rewards_mean
-                self.model.save(self.logdir + '/' + str(steps // 1e4) + '_' + str(rewards_mean))
-
+        names_ops, values_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps)
 
         if on_policy and (int(steps/runner.nbatch) % self.log_interval == 0):
             logger.record_tabular("total_timesteps", steps)
@@ -419,23 +335,11 @@ class Acer():
             # IMP: In EpisodicLife env, during training, we get done=True at each loss of life, not just at the terminal state.
             # Thus, this is mean until end of life, not end of episode.
             # For true episode rewards, see the monitor files in the log folder.
-            # logger.record_tabular("mean_episode_length", self.episode_stats.mean_length())
-            # logger.record_tabular("mean_episode_reward", self.episode_stats.mean_reward())
+            logger.record_tabular("mean_episode_length", self.episode_stats.mean_length())
+            logger.record_tabular("mean_episode_reward", self.episode_stats.mean_reward())
             for name, val in zip(names_ops, values_ops):
                 logger.record_tabular(name, float(val))
             logger.dump_tabular()
-
-    def evaluate(self, env, n):
-        reward_total = 0
-        length_total = 0
-        for i in range(n):
-            reward_episode, length_episode = self.runner.evaluate(env)
-            reward_total += reward_episode
-            length_total += length_episode
-
-        reward_mean = reward_total / n
-        length_mean = length_total / n
-        return reward_mean, length_mean
 
 
 def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_coef=0.5, ent_coef=0.01,
@@ -452,12 +356,12 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
     ac_space = env.action_space
     num_procs = len(env.remotes) # HACK
     model = Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nenvs=nenvs, nsteps=nsteps, nstack=nstack,
-                  num_procs=num_procs, ent_coef=ent_coef, q_coef=q_coef, e_vf_coef=q_coef, gamma=gamma,
+                  num_procs=num_procs, ent_coef=ent_coef, q_coef=q_coef, gamma=gamma,
                   max_grad_norm=max_grad_norm, lr=lr, rprop_alpha=rprop_alpha, rprop_epsilon=rprop_epsilon,
                   total_timesteps=total_timesteps, lrschedule=lrschedule, c=c,
                   trust_region=trust_region, alpha=alpha, delta=delta)
 
-    runner = Runner(env=env, model=model, nsteps=nsteps, nstack=nstack, gamma=gamma)
+    runner = Runner(env=env, model=model, nsteps=nsteps, nstack=nstack)
     if replay_ratio > 0:
         buffer = Buffer(env=env, nsteps=nsteps, nstack=nstack, size=buffer_size)
     else:
@@ -467,9 +371,9 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
     acer.tstart = time.time()
     for acer.steps in range(0, total_timesteps, nbatch): #nbatch samples, 1 on_policy call and multiple off-policy calls
         acer.call(on_policy=True)
-        # if replay_ratio > 0 and buffer.has_atleast(replay_start):
-        #     n = np.random.poisson(replay_ratio)
-        #     for _ in range(n):
-        #         acer.call(on_policy=False)  # no simulation steps in this
+        if replay_ratio > 0 and buffer.has_atleast(replay_start):
+            n = np.random.poisson(replay_ratio)
+            for _ in range(n):
+                acer.call(on_policy=False)  # no simulation steps in this
 
     env.close()
