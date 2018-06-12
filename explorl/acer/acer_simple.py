@@ -353,7 +353,7 @@ class Runner(AbstractEnvRunner):
         return reward_episode ,length_episode
 
 class Acer():
-    def __init__(self, runner, model, buffer, log_interval, evaluate_env, evaluate_interval, evaluate_n):
+    def __init__(self, runner, model, buffer, log_interval, evaluate_env, evaluate_interval, evaluate_n, summary_writer):
         self.runner = runner
         self.model = model
         self.buffer = buffer
@@ -365,6 +365,8 @@ class Acer():
         self.evaluate_env = evaluate_env
         self.evaluate_interval = evaluate_interval
         self.evaluate_n = evaluate_n
+
+        self.summary_writer = summary_writer
 
     def call(self, on_policy):
         runner, model, buffer, steps = self.runner, self.model, self.buffer, self.steps
@@ -391,10 +393,15 @@ class Acer():
 
         names_ops, values_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps, e_returns, e_advs)
 
-        if on_policy and (int(steps/runner.nbatch) % self.evaluate_interval== 0):
+        if on_policy and (int(steps/runner.nbatch) % self.evaluate_interval== 0) and self.summary_writer:
             rewards_mean, length_mean = self.evaluate(self.evaluate_env, self.evaluate_n)
-            logger.record_tabular("mean_episode_length", rewards_mean)
-            logger.record_tabular("mean_episode_reward", length_mean)
+            # logger.record_tabular("mean_episode_length", rewards_mean)
+            # logger.record_tabular("mean_episode_reward", length_mean)
+            stats = tf.Summary(value=[
+                tf.Summary.Value(tag="reward_mean", simple_value=rewards_mean),
+                tf.Summary.Value(tag="length_mean", simple_value=length_mean),
+            ],)
+            self.summary_writer.add_summary(stats, steps)
 
 
         if on_policy and (int(steps/runner.nbatch) % self.log_interval == 0):
@@ -425,7 +432,7 @@ class Acer():
 def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_coef=0.5, ent_coef=0.01,
           max_grad_norm=10, lr=7e-4, lrschedule='linear', rprop_epsilon=1e-5, rprop_alpha=0.99, gamma=0.99,
           log_interval=100, buffer_size=50000, replay_ratio=4, replay_start=10000, c=10.0,
-          trust_region=True, alpha=0.99, delta=1):
+          trust_region=True, alpha=0.99, delta=1, logdir=None):
     print("Running Acer Simple")
     print(locals())
     tf.reset_default_graph()
@@ -447,7 +454,13 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
     else:
         buffer = None
     nbatch = nenvs*nsteps
-    acer = Acer(runner, model, buffer, log_interval, evaluate_env, 1000, 1)
+
+    if logdir:
+        summary_writer = tf.summary.FileWriter(logdir=logdir)
+    else:
+        summary_writer = None
+
+    acer = Acer(runner, model, buffer, log_interval, evaluate_env, 1e6//nsteps//nenvs, 20, summary_writer)
     acer.tstart = time.time()
     for acer.steps in range(0, total_timesteps, nbatch): #nbatch samples, 1 on_policy call and multiple off-policy calls
         acer.call(on_policy=True)

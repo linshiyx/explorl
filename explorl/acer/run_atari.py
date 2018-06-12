@@ -3,6 +3,7 @@ from baselines import logger
 from explorl.acer.acer_simple import learn
 from explorl.acer.policies import AcerCnnPolicy, AcerLstmPolicy
 from baselines.common.cmd_util import make_atari_env, atari_arg_parser
+import datetime
 
 def train(env_id, num_timesteps, seed, policy, lrschedule, num_cpu):
     env = make_atari_env(env_id, num_cpu, seed)
@@ -14,7 +15,8 @@ def train(env_id, num_timesteps, seed, policy, lrschedule, num_cpu):
     else:
         print("Policy {} not implemented".format(policy))
         return
-    learn(policy_fn, env, evaluate_env, seed, total_timesteps=int(num_timesteps * 1.1), lrschedule=lrschedule)
+    learn(policy_fn, env, evaluate_env, seed, total_timesteps=int(num_timesteps * 1.1), lrschedule=lrschedule,
+          logdir='./logs/'+datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d-%H%M%S'))
     env.close()
 
 def main():
@@ -24,8 +26,10 @@ def main():
     parser.add_argument('--logdir', help ='Directory for logging')
     args = parser.parse_args()
     logger.configure(args.logdir)
-    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
+    train(args.env, num_timesteps=1e8, seed=args.seed,
           policy=args.policy, lrschedule=args.lrschedule, num_cpu=2)
+    # train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
+    #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16)
 
 if __name__ == '__main__':
     main()
