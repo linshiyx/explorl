@@ -15,6 +15,7 @@ from baselines.a2c.utils import get_by_index, check_shape, avg_norm, gradient_ad
 from explorl.acer_baseline.buffer import Buffer
 
 import os.path as osp
+import csv
 
 # remove last step
 def strip(var, nenvs, nsteps, flat = False):
@@ -62,6 +63,7 @@ class Model(object):
         config = tf.ConfigProto(allow_soft_placement=True,
                                 intra_op_parallelism_threads=num_procs,
                                 inter_op_parallelism_threads=num_procs)
+        config.gpu_options.allow_growth = True
         sess = tf.Session(config=config)
         nact = ac_space.n
         nbatch = nenvs * nsteps
@@ -305,6 +307,10 @@ class Acer():
             self.summary_writer = tf.summary.FileWriter(logdir=logdir)
             self.logdir=logdir
             self.best_mean_reward = 0
+
+            self.evaluation_f = open(logdir+'/evaluation_monitor.csv', "wt")
+            self.evaluation_logger = csv.DictWriter(self.evaluation_f, fieldnames=('r', 'l'))
+            self.evaluation_logger.writeheader()
         else:
             self.summary_writer = None
 
@@ -339,6 +345,9 @@ class Acer():
                 tf.Summary.Value(tag="length_mean", simple_value=length_mean),
             ],)
             self.summary_writer.add_summary(stats, steps)
+
+            self.evaluation_logger.writerow({'r': rewards_mean, 'l': length_mean})
+            self.evaluation_f.flush()
 
             if rewards_mean > self.best_mean_reward:
                 self.best_mean_reward = rewards_mean
