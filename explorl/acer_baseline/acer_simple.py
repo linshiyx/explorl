@@ -329,6 +329,21 @@ class Acer():
 
         names_ops, values_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps)
 
+
+        if on_policy and (int(steps/runner.nbatch) % self.evaluate_interval== 0) and self.summary_writer:
+            rewards_mean, length_mean = self.evaluate(self.evaluate_env, self.evaluate_n)
+            # logger.record_tabular("mean_episode_length", rewards_mean)
+            # logger.record_tabular("mean_episode_reward", length_mean)
+            stats = tf.Summary(value=[
+                tf.Summary.Value(tag="reward_mean", simple_value=rewards_mean),
+                tf.Summary.Value(tag="length_mean", simple_value=length_mean),
+            ],)
+            self.summary_writer.add_summary(stats, steps)
+
+            if rewards_mean > self.best_mean_reward:
+                self.best_mean_reward = rewards_mean
+                self.model.save(self.logdir + '/' + str(steps // 1e4) + '_' + str(rewards_mean))
+
         if on_policy and (int(steps/runner.nbatch) % self.log_interval == 0):
             logger.record_tabular("total_timesteps", steps)
             logger.record_tabular("fps", int(steps/(time.time() - self.tstart)))
@@ -340,6 +355,18 @@ class Acer():
             for name, val in zip(names_ops, values_ops):
                 logger.record_tabular(name, float(val))
             logger.dump_tabular()
+
+    def evaluate(self, env, n):
+        reward_total = 0
+        length_total = 0
+        for i in range(n):
+            reward_episode, length_episode = self.runner.evaluate(env)
+            reward_total += reward_episode
+            length_total += length_episode
+
+        reward_mean = reward_total / n
+        length_mean = length_total / n
+        return reward_mean, length_mean
 
 
 def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_coef=0.5, ent_coef=0.01,
@@ -371,9 +398,9 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
     acer.tstart = time.time()
     for acer.steps in range(0, total_timesteps, nbatch): #nbatch samples, 1 on_policy call and multiple off-policy calls
         acer.call(on_policy=True)
-        if replay_ratio > 0 and buffer.has_atleast(replay_start):
-            n = np.random.poisson(replay_ratio)
-            for _ in range(n):
-                acer.call(on_policy=False)  # no simulation steps in this
+        # if replay_ratio > 0 and buffer.has_atleast(replay_start):
+        #     n = np.random.poisson(replay_ratio)
+        #     for _ in range(n):
+        #         acer.call(on_policy=False)  # no simulation steps in this
 
     env.close()

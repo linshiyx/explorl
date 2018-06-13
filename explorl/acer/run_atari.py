@@ -7,7 +7,7 @@ import datetime
 
 def train(env_id, num_timesteps, seed, policy, lrschedule, num_cpu, logdir):
     env = make_atari_env(env_id, num_cpu, seed)
-    evaluate_env = make_atari_env(env_id, 1, seed, start_index=100)
+    evaluate_env = make_atari_env(env_id, 1, seed, wrapper_kwargs={'clip_rewards': False}, start_index=100)
     if policy == 'cnn':
         policy_fn = AcerCnnPolicy
     elif policy == 'lstm':
