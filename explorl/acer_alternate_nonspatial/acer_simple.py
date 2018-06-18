@@ -58,7 +58,7 @@ class Model(object):
     def __init__(self, policy, ob_space, ac_space, nenvs, nsteps, nstack, num_procs,
                  ent_coef, q_coef, e_vf_coef, gamma, max_grad_norm, lr,
                  rprop_alpha, rprop_epsilon, total_timesteps, lrschedule,
-                 c, trust_region, alpha, delta):
+                 c, trust_region, alpha, delta, num_nonspatial):
         config = tf.ConfigProto(# allow_soft_placement=True,
                                 intra_op_parallelism_threads=num_procs,
                                 inter_op_parallelism_threads=num_procs)
@@ -87,8 +87,8 @@ class Model(object):
         self.delta = delta
         self.trust_region = trust_region
 
-        step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, reuse=False)
-        train_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, reuse=True)
+        step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, num_nonspatial, reuse=False)
+        train_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, num_nonspatial, reuse=True)
 
         e_R = tf.placeholder(tf.float32, [nbatch]) # rewards, not returns
         e_MU = tf.placeholder(tf.float32, [nbatch, nact]) # mu's
@@ -111,7 +111,7 @@ class Model(object):
                 return v
 
         with tf.variable_scope("", custom_getter=custom_getter, reuse=True):
-            polyak_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, reuse=True)
+            polyak_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, num_nonspatial, reuse=True)
 
         grads, loss_policy, loss_q = self.get_gradient(train_model.pi, polyak_model.pi, train_model.q, MU, R, params)
         e_grads, e_loss_policy, e_loss_q = self.get_gradient(train_model.e_pi, polyak_model.e_pi, train_model.e_q, e_MU, e_R, e_params)
@@ -147,9 +147,11 @@ class Model(object):
         #                              'avg_norm_k_dot_g', 'avg_norm_adj', 'e_pg_loss', 'e_vf_loss']
 
 
-        def train(obs, actions, rewards, dones, mus, states, masks, steps, e_rewards, e_mus):
+        def train(obs, nonspatial, actions, rewards, dones, mus, states, masks, steps, e_rewards, e_mus):
             cur_lr = lr.value_steps(steps)
-            td_map = {train_model.X: obs, polyak_model.X: obs, A: actions, R: rewards, D: dones, MU: mus, LR: cur_lr,
+            td_map = {train_model.X: obs, train_model.NonspatialX: nonspatial,
+                      polyak_model.X: obs, polyak_model.NonspatialX: nonspatial,
+                      A: actions, R: rewards, D: dones, MU: mus, LR: cur_lr,
                       e_MU: e_mus, e_R: e_rewards}
             if states != []:
                 td_map[train_model.S] = states
@@ -258,7 +260,7 @@ class Model(object):
         return grads, loss_policy, loss_q
 
 class Runner(AbstractEnvRunner):
-    def __init__(self, env, model, nsteps, nstack):
+    def __init__(self, env, model, nsteps, nstack, num_nonspatial):
         super().__init__(env=env, model=model, nsteps=nsteps)
         self.nstack = nstack
         nh, nw, nc = env.observation_space.shape
@@ -271,6 +273,9 @@ class Runner(AbstractEnvRunner):
         obs = env.reset()
         self.update_obs(obs)
 
+        self.num_nonspatial = num_nonspatial
+        self.batch_nonspatial_shape = (nenv*(nsteps+1), num_nonspatial)
+
     def update_obs(self, obs, dones=None):
         if dones is not None:
             self.obs *= (1 - dones.astype(np.uint8))[:, None, None, None]
@@ -280,20 +285,28 @@ class Runner(AbstractEnvRunner):
     def run(self, explore=False):
         enc_obs = np.split(self.obs, self.nstack, axis=3)  # so now list of obs steps
         mb_obs, mb_actions, mb_mus, mb_dones, mb_rewards = [], [], [], [], []
-        mb_e_mus, mb_e_rewards = [], []
+        mb_e_mus, mb_e_rewards, mb_nonspatials = [], [], []
+        self.nonspatial = np.zeros((self.nenv, self.num_nonspatial), dtype=np.float32)
         for _ in range(self.nsteps):
             # actions, mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
             if explore:
-                actions, mus, e_mus, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
+                actions, mus, e_mus, states = self.model.e_step(self.obs, self.nonspatial, state=self.states, mask=self.dones)
             else:
-                actions, mus, e_mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
+                actions, mus, e_mus, states = self.model.step(self.obs, self.nonspatial, state=self.states, mask=self.dones)
             mb_obs.append(np.copy(self.obs))
+            mb_nonspatials.append(self.nonspatial)
             mb_actions.append(actions)
             mb_mus.append(mus)
             mb_e_mus.append(e_mus)
             mb_dones.append(self.dones)
-            obs, rewards, dones, _ = self.env.step(actions)
+            obs, rewards, dones, info = self.env.step(actions)
             # states information for statefull models like LSTM
+
+            self.nonspatial = np.zeros((self.nenv, self.num_nonspatial), dtype=np.float32)
+            for i in range(len(info)):
+                self.nonspatial[i][0] = 1 if info[i]['rings'] > 0 else 0
+                self.nonspatial[i][1] = info[i]['x'] / 9000
+
             self.states = states
             self.dones = dones
             self.update_obs(obs, dones)
@@ -305,10 +318,11 @@ class Runner(AbstractEnvRunner):
 
             enc_obs.append(obs)
         mb_obs.append(np.copy(self.obs))
+        mb_nonspatials.append(self.nonspatial)
         mb_dones.append(self.dones)
 
         # for explore rewards
-        _, last_mus, _, _ = self.model.step(self.obs, state=self.states, mask=self.dones)
+        _, last_mus, _, _ = self.model.step(self.obs, self.nonspatial, state=self.states, mask=self.dones)
         e_rewards = -np.sum(last_mus*np.log(last_mus + 1e-5), axis=1)
         e_rewards[dones == True] = 0
         mb_e_rewards.append(e_rewards)
@@ -317,6 +331,7 @@ class Runner(AbstractEnvRunner):
 
         enc_obs = np.asarray(enc_obs, dtype=np.uint8).swapaxes(1, 0)
         mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0)
+        mb_nonspatials = np.asarray(mb_nonspatials, dtype=np.float32).swapaxes(1, 0)
         mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0)
         mb_mus = np.asarray(mb_mus, dtype=np.float32).swapaxes(1, 0)
@@ -327,7 +342,7 @@ class Runner(AbstractEnvRunner):
         mb_masks = mb_dones # Used for statefull models like LSTM's to mask state when done
         mb_dones = mb_dones[:, 1:] # Used for calculating returns. The dones array is now aligned with rewards
 
-        return enc_obs, mb_obs, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks, mb_e_rewards, mb_e_mus
+        return enc_obs, mb_obs, mb_nonspatials, mb_actions, mb_rewards, mb_mus, mb_dones, mb_masks, mb_e_rewards, mb_e_mus
 
     def evaluate(self, env):
         done = False
@@ -335,13 +350,21 @@ class Runner(AbstractEnvRunner):
         e_obs = np.zeros((self.nenv, nh, nw, nc * self.nstack), dtype=np.uint8)
         obs = env.reset()
         obs = np.concatenate([obs]*self.nenv, axis=0)
+        nonspatial = np.zeros((self.nenv, self.num_nonspatial), dtype=np.float32)
         e_obs = np.roll(e_obs, shift=-self.nc, axis=3)
         e_obs[:, :, :, -self.nc:] = obs[:, :, :, :]
         reward_episode = 0
         length_episode = 0
         while not done:
-            action = self.model.step(e_obs)
+            action = self.model.step(e_obs, nonspatial)
             obs, rew, done, info = env.step(action[0])
+
+            nonspatial = np.zeros((1, self.num_nonspatial), dtype=np.float32)
+            for i in range(len(info)):
+                nonspatial[i][0] = 1 if info[i]['rings'] > 0 else 0
+                nonspatial[i][1] = info[i]['x'] / 9000
+            nonspatial = np.concatenate([nonspatial]*self.nenv, axis=0)
+
             obs = np.concatenate([obs]*self.nenv, axis=0)
             e_obs = np.roll(e_obs, shift=-self.nc, axis=3)
             e_obs[:, :, :, -self.nc:] = obs[:, :, :, :]
@@ -378,7 +401,7 @@ class Acer():
         runner, model, buffer, steps = self.runner, self.model, self.buffer, self.steps
         if on_policy:
             # enc_obs, obs, actions, rewards, mus, dones, masks = runner.run()
-            enc_obs, obs, actions, rewards, mus, dones, masks, e_rewards, e_mus = runner.run(explore)
+            enc_obs, obs, nonspatials, actions, rewards, mus, dones, masks, e_rewards, e_mus = runner.run(explore)
             self.episode_stats.feed(rewards, dones)
             if buffer is not None:
                 buffer.put(enc_obs, actions, rewards, mus, dones, masks)
@@ -388,6 +411,8 @@ class Acer():
 
         # reshape stuff correctly
         obs = obs.reshape(runner.batch_ob_shape)
+        nonspatials = nonspatials.reshape(runner.batch_nonspatial_shape)
+
         actions = actions.reshape([runner.nbatch])
         rewards = rewards.reshape([runner.nbatch])
         mus = mus.reshape([runner.nbatch, runner.nact])
@@ -397,7 +422,7 @@ class Acer():
         e_rewards = e_rewards.reshape([runner.nbatch])
         e_mus = e_mus.reshape([runner.nbatch, runner.nact])
 
-        names_ops, values_ops = model.train(obs, actions, rewards, dones, mus, model.initial_state, masks, steps, e_rewards, e_mus)
+        names_ops, values_ops = model.train(obs, nonspatials, actions, rewards, dones, mus, model.initial_state, masks, steps, e_rewards, e_mus)
 
         if on_policy and (int(steps/runner.nbatch) % self.evaluate_interval== 0) and self.summary_writer:
             rewards_mean, length_mean = self.evaluate(self.evaluate_env, self.evaluate_n)
@@ -445,7 +470,7 @@ class Acer():
 def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_coef=0.5, ent_coef=0.01,
           max_grad_norm=10, lr=7e-4, lrschedule='linear', rprop_epsilon=1e-5, rprop_alpha=0.99, gamma=0.99,
           log_interval=100, buffer_size=50000, replay_ratio=4, replay_start=10000, c=10.0,
-          trust_region=True, alpha=0.99, delta=1, logdir=None, load_path=None):
+          trust_region=True, alpha=0.99, delta=1, num_nonspatial=2, logdir=None, load_path=None):
     print("Running Acer Simple")
     print(locals())
     tf.reset_default_graph()
@@ -459,12 +484,12 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
                   num_procs=num_procs, ent_coef=ent_coef, q_coef=q_coef, e_vf_coef=q_coef, gamma=gamma,
                   max_grad_norm=max_grad_norm, lr=lr, rprop_alpha=rprop_alpha, rprop_epsilon=rprop_epsilon,
                   total_timesteps=total_timesteps, lrschedule=lrschedule, c=c,
-                  trust_region=trust_region, alpha=alpha, delta=delta)
+                  trust_region=trust_region, alpha=alpha, delta=delta, num_nonspatial=num_nonspatial)
 
     if load_path is not None:
         model.load(load_path)
 
-    runner = Runner(env=env, model=model, nsteps=nsteps, nstack=nstack)
+    runner = Runner(env=env, model=model, nsteps=nsteps, nstack=nstack, num_nonspatial=num_nonspatial)
     # if replay_ratio > 0:
     #     buffer = Buffer(env=env, nsteps=nsteps, nstack=nstack, size=buffer_size)
     # else:

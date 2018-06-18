@@ -7,8 +7,8 @@ import numpy as np
 
 from baselines.common.atari_wrappers import WarpFrame, FrameStack
 from baselines.common.cmd_util import make_atari_env, atari_arg_parser
-from explorl.acer_alternate.acer_simple import learn
-from explorl.acer_alternate.policies import AcerCnnPolicy, AcerLstmPolicy
+from explorl.acer_alternate_nonspatial.acer_simple import learn
+from explorl.acer_alternate_nonspatial.policies import AcerCnnPolicyNonspatial, AcerLstmPolicy
 from baselines import logger
 from baselines.common.vec_env import subproc_vec_env
 from baselines.common import set_global_seeds
@@ -129,17 +129,17 @@ def train(game, state, num_timesteps, seed, policy, lrschedule, num_cpu, logdir,
     # evaluate_env = make_atari_env(env_id, 1, seed, wrapper_kwargs={'clip_rewards': False}, start_index=100)
     # env = subproc_vec_env.SubprocVecEnv([make_env()])
     set_global_seeds(seed)
-    env = make_sonic_env(game=game, state=state, num_env=num_cpu, seed=0, render=True)
+    env = make_sonic_env(game=game, state=state, num_env=num_cpu, seed=0, render=False)
     evaluate_env = make_sonic_env(game=game, state=state, num_env=1, seed=1000, scale_rew=False)
     if policy == 'cnn':
-        policy_fn = AcerCnnPolicy
+        policy_fn = AcerCnnPolicyNonspatial
     elif policy == 'lstm':
         policy_fn = AcerLstmPolicy
     else:
         print("Policy {} not implemented".format(policy))
         return
     learn(policy_fn, env, evaluate_env, seed, total_timesteps=int(num_timesteps * 1.1), lrschedule=lrschedule,
-          replay_ratio=0, logdir=logdir, load_path=load_path)
+          replay_ratio=0, num_nonspatial=2, logdir=logdir, load_path=load_path)
     env.close()
 
 def main():
@@ -155,9 +155,10 @@ def main():
     #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16, logdir=logdir)
     game = 'SonicTheHedgehog-Genesis'
     state = 'SpringYardZone.Act1'
-    load_path = "logs/1/698_3030"
+    # load_path = "logs/1/698_3030"
+    load_path = None
     train(game=game, state=state, num_timesteps=1e8, seed=args.seed, policy=args.policy,
-          lrschedule=args.lrschedule, num_cpu=1, logdir=logdir, load_path=load_path)
+          lrschedule=args.lrschedule, num_cpu=16, logdir=logdir, load_path=load_path)
 
 if __name__ == '__main__':
     main()
