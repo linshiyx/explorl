@@ -304,8 +304,8 @@ class Runner(AbstractEnvRunner):
 
             self.nonspatial = np.zeros((self.nenv, self.num_nonspatial), dtype=np.float32)
             for i in range(len(info)):
-                self.nonspatial[i][0] = 1 if info[i]['rings'] > 0 else 0
-                self.nonspatial[i][1] = info[i]['x'] / 9000
+                self.nonspatial[i][0] = 0.5 if info[i]['rings'] > 0 else -0.5
+                self.nonspatial[i][1] = (info[i]['x'] - 4500) * 1. / 9000
 
             self.states = states
             self.dones = dones
@@ -361,8 +361,8 @@ class Runner(AbstractEnvRunner):
 
             nonspatial = np.zeros((1, self.num_nonspatial), dtype=np.float32)
             for i in range(len(info)):
-                nonspatial[i][0] = 1 if info[i]['rings'] > 0 else 0
-                nonspatial[i][1] = info[i]['x'] / 9000
+                nonspatial[i][0] = 0.5 if info[i]['rings'] > 0 else -0.5
+                nonspatial[i][1] = (info[i]['x'] - 4500) * 1. / 9000
             nonspatial = np.concatenate([nonspatial]*self.nenv, axis=0)
 
             obs = np.concatenate([obs]*self.nenv, axis=0)
