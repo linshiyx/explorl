@@ -155,14 +155,15 @@ def main():
     #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16, logdir=logdir)
     game = 'SonicTheHedgehog-Genesis'
     state = 'SpringYardZone.Act1'
-    load_model_steps = 628
-    load_model_rewards = 3715
-    load_path = "logs/0/{}_{}".format(load_model_steps, load_model_rewards)
-    load_info = {'path': load_path,
-                 'steps': load_model_steps,
-                 'rewards': load_model_rewards}
+    # load_model_steps = 628
+    # load_model_rewards = 3715
+    # load_path = "logs/0/{}_{}".format(load_model_steps, load_model_rewards)
+    # load_info = {'path': load_path,
+    #              'steps': load_model_steps,
+    #              'rewards': load_model_rewards}
+    load_info=None
     train(game=game, state=state, num_timesteps=1e8, seed=args.seed, policy=args.policy,
-          lrschedule=args.lrschedule, num_cpu=16, logdir=logdir, load_info=load_info)
+          lrschedule=args.lrschedule, num_cpu=2, logdir=logdir, load_info=load_info)
 
 if __name__ == '__main__':
     main()

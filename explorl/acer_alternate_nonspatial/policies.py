@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from baselines.ppo2.policies import nature_cnn
-from baselines.a2c.utils import fc, batch_to_seq, seq_to_batch, lstm, sample
+from baselines.a2c.utils import fc, batch_to_seq, seq_to_batch, lstm #, sample
 
 
 class AcerCnnPolicyNonspatial(object):
@@ -29,7 +29,9 @@ class AcerCnnPolicyNonspatial(object):
                 # e_v = fc(nogradient_h, 'e_v', 1)[:, 0]
                 e_q = fc(nogradient_h, 'e_q', nact)
 
-        a = sample(pi_logits)  # could change this to use self.pi instead
+        # a = sample(pi_logits)  # could change this to use self.pi instead
+        a = tf.squeeze(tf.multinomial(pi_logits, 1), 1)
+        evaluate_a = tf.argmax(pi_logits, 1)
 
         self.initial_state = []  # not stateful
         self.X = X
@@ -38,7 +40,8 @@ class AcerCnnPolicyNonspatial(object):
         self.q = q
 
         # for explore
-        e_a = sample(e_pi_logits)  # could change this to use self.pi instead
+        # e_a = sample(e_pi_logits)  # could change this to use self.pi instead
+        e_a = tf.squeeze(tf.multinomial(e_pi_logits, 1), 1)
         self.e_pi_logits = e_pi_logits
         self.e_pi = e_pi
         # self.e_v = e_v
@@ -48,6 +51,11 @@ class AcerCnnPolicyNonspatial(object):
             # returns actions, mus, states
             a0, pi0, e_pi0 = sess.run([a, pi, e_pi], {X: ob, NonspatialX: nonspatial})
             return a0, pi0, e_pi0, []  # dummy state
+
+        def evaluate_step(ob, nonspatial, *args, **kwargs):
+            evaluate_a0, pi0, e_pi0 = sess.run([evaluate_a, pi, e_pi], {X: ob, NonspatialX: nonspatial})
+            return evaluate_a0, pi0, e_pi0, []  # dummy state
+        self.evaluate_step = evaluate_step
 
         # for explore
         def e_step(ob, nonspatial, *args, **kwargs):

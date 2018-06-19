@@ -176,6 +176,7 @@ class Model(object):
         self.train_model = train_model
         self.step_model = step_model
         self.step = step_model.step
+        self.evaluate_step = step_model.evaluate_step
         self.e_step = step_model.e_step
         self.initial_state = step_model.initial_state
         tf.global_variables_initializer().run(session=sess)
@@ -340,7 +341,7 @@ class Runner(AbstractEnvRunner):
         reward_episode = 0
         length_episode = 0
         while not done:
-            action = self.model.step(e_obs)
+            action = self.model.evaluate_step(e_obs)
             obs, rew, done, info = env.step(action[0])
             obs = np.concatenate([obs]*self.nenv, axis=0)
             e_obs = np.roll(e_obs, shift=-self.nc, axis=3)
