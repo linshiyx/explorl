@@ -492,7 +492,7 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
     steps_start = 0
     if load_info is not None:
         model.load(load_info['path'])
-        steps_start = load_info['steps'] * 1e4
+        steps_start = int(load_info['steps'] * 1e4)
 
     runner = Runner(env=env, model=model, nsteps=nsteps, nstack=nstack, num_nonspatial=num_nonspatial)
     # if replay_ratio > 0:

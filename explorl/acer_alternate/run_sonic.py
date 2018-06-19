@@ -129,7 +129,7 @@ def train(game, state, num_timesteps, seed, policy, lrschedule, num_cpu, logdir,
     # evaluate_env = make_atari_env(env_id, 1, seed, wrapper_kwargs={'clip_rewards': False}, start_index=100)
     # env = subproc_vec_env.SubprocVecEnv([make_env()])
     set_global_seeds(seed)
-    env = make_sonic_env(game=game, state=state, num_env=num_cpu, seed=0, render=True)
+    env = make_sonic_env(game=game, state=state, num_env=num_cpu, seed=0, render=False)
     evaluate_env = make_sonic_env(game=game, state=state, num_env=1, seed=1000, scale_rew=False)
     if policy == 'cnn':
         policy_fn = AcerCnnPolicy
@@ -162,7 +162,7 @@ def main():
                  'steps': load_model_steps,
                  'rewards': load_model_rewards}
     train(game=game, state=state, num_timesteps=1e8, seed=args.seed, policy=args.policy,
-          lrschedule=args.lrschedule, num_cpu=1, logdir=logdir, load_info=load_info)
+          lrschedule=args.lrschedule, num_cpu=16, logdir=logdir, load_info=load_info)
 
 if __name__ == '__main__':
     main()
