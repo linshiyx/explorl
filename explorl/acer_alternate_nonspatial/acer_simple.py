@@ -373,7 +373,7 @@ class Runner(AbstractEnvRunner):
         return reward_episode ,length_episode
 
 class Acer():
-    def __init__(self, runner, model, log_interval, evaluate_env, evaluate_interval, evaluate_n, logdir):
+    def __init__(self, runner, model, log_interval, evaluate_env, evaluate_interval, evaluate_n, logdir, load_info=None):
         self.runner = runner
         self.model = model
         self.buffer = None
@@ -389,7 +389,10 @@ class Acer():
         if logdir:
             self.summary_writer = tf.summary.FileWriter(logdir=logdir)
             self.logdir=logdir
-            self.best_mean_reward = 0
+            if load_info is not None:
+                self.best_mean_reward = load_info['rewards']
+            else:
+                self.best_mean_reward = 0
 
             self.evaluation_f = open(logdir+'/evaluation_monitor.csv', "wt")
             self.evaluation_logger = csv.DictWriter(self.evaluation_f, fieldnames=('r', 'l'))
@@ -470,7 +473,7 @@ class Acer():
 def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=int(80e6), q_coef=0.5, ent_coef=0.01,
           max_grad_norm=10, lr=7e-4, lrschedule='linear', rprop_epsilon=1e-5, rprop_alpha=0.99, gamma=0.99,
           log_interval=100, buffer_size=50000, replay_ratio=4, replay_start=10000, c=10.0,
-          trust_region=True, alpha=0.99, delta=1, num_nonspatial=2, logdir=None, load_path=None):
+          trust_region=True, alpha=0.99, delta=1, num_nonspatial=2, logdir=None, load_info=None):
     print("Running Acer Simple")
     print(locals())
     tf.reset_default_graph()
@@ -486,8 +489,10 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
                   total_timesteps=total_timesteps, lrschedule=lrschedule, c=c,
                   trust_region=trust_region, alpha=alpha, delta=delta, num_nonspatial=num_nonspatial)
 
-    if load_path is not None:
-        model.load(load_path)
+    steps_start = 0
+    if load_info is not None:
+        model.load(load_info['path'])
+        steps_start = load_info['steps'] * 1e4
 
     runner = Runner(env=env, model=model, nsteps=nsteps, nstack=nstack, num_nonspatial=num_nonspatial)
     # if replay_ratio > 0:
@@ -495,9 +500,9 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
     # else:
     #     buffer = None
     nbatch = nenvs*nsteps
-    acer = Acer(runner, model, log_interval, evaluate_env, 1e5//nsteps//nenvs, 5, logdir)
+    acer = Acer(runner, model, log_interval, evaluate_env, 1e5//nsteps//nenvs, 5, logdir, load_info)
     acer.tstart = time.time()
-    for acer.steps in range(0, total_timesteps, nbatch): #nbatch samples, 1 on_policy call and multiple off-policy calls
+    for acer.steps in range(steps_start, total_timesteps, nbatch): #nbatch samples, 1 on_policy call and multiple off-policy calls
         acer.call(on_policy=True, explore=False)
         # if replay_ratio > 0 and buffer.has_atleast(replay_start):
         #     n = np.random.poisson(replay_ratio)

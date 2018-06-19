@@ -124,7 +124,7 @@ class AllowBacktracking(gym.Wrapper):
         return obs, rew, done, info
 
 
-def train(game, state, num_timesteps, seed, policy, lrschedule, num_cpu, logdir, load_path):
+def train(game, state, num_timesteps, seed, policy, lrschedule, num_cpu, logdir, load_info):
     # env = make_atari_env(env_id, num_cpu, seed)
     # evaluate_env = make_atari_env(env_id, 1, seed, wrapper_kwargs={'clip_rewards': False}, start_index=100)
     # env = subproc_vec_env.SubprocVecEnv([make_env()])
@@ -139,7 +139,7 @@ def train(game, state, num_timesteps, seed, policy, lrschedule, num_cpu, logdir,
         print("Policy {} not implemented".format(policy))
         return
     learn(policy_fn, env, evaluate_env, seed, total_timesteps=int(num_timesteps * 1.1), lrschedule=lrschedule,
-          replay_ratio=0, logdir=logdir, load_path=load_path)
+          replay_ratio=0, logdir=logdir, load_info=load_info)
     env.close()
 
 def main():
@@ -155,9 +155,14 @@ def main():
     #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16, logdir=logdir)
     game = 'SonicTheHedgehog-Genesis'
     state = 'SpringYardZone.Act1'
-    load_path = "logs/1/698_3030"
+    load_model_steps = 628
+    load_model_rewards = 3715
+    load_path = "logs/0/{}_{}".format(load_model_steps, load_model_rewards)
+    load_info = {'path': load_path,
+                 'steps': load_model_steps,
+                 'rewards': load_model_rewards}
     train(game=game, state=state, num_timesteps=1e8, seed=args.seed, policy=args.policy,
-          lrschedule=args.lrschedule, num_cpu=1, logdir=logdir, load_path=load_path)
+          lrschedule=args.lrschedule, num_cpu=1, logdir=logdir, load_info=load_info)
 
 if __name__ == '__main__':
     main()
