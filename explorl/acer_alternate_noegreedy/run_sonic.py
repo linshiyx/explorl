@@ -7,8 +7,8 @@ import numpy as np
 
 from baselines.common.atari_wrappers import WarpFrame, FrameStack
 from baselines.common.cmd_util import make_atari_env, atari_arg_parser
-from explorl.acer_alternate.acer_simple import learn
-from explorl.acer_alternate.policies import AcerCnnPolicy, AcerLstmPolicy
+from explorl.acer_alternate_noegreedy.acer_simple import learn
+from explorl.acer_alternate_noegreedy.policies import AcerCnnPolicy, AcerLstmPolicy
 from baselines import logger
 from baselines.common.vec_env import subproc_vec_env
 from baselines.common import set_global_seeds
@@ -157,13 +157,13 @@ def main():
     #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16, logdir=logdir)
     game = 'SonicTheHedgehog-Genesis'
     state = 'SpringYardZone.Act1'
-    load_model_steps = 998
-    load_model_rewards = 4445
-    load_path = "logs/0_628/{}_{}".format(load_model_steps, load_model_rewards)
-    load_info = {'path': load_path,
-                 'steps': load_model_steps,
-                 'rewards': load_model_rewards}
-    # load_info=None
+    # load_model_steps = 998
+    # load_model_rewards = 4445
+    # load_path = "logs/0_628/{}_{}".format(load_model_steps, load_model_rewards)
+    # load_info = {'path': load_path,
+    #              'steps': load_model_steps,
+    #              'rewards': load_model_rewards}
+    load_info=None
     train(game=game, state=state, num_timesteps=1e8, seed=args.seed, policy=args.policy,
           lrschedule=args.lrschedule, num_cpu=1, logdir=logdir, load_info=load_info)
 

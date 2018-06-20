@@ -113,6 +113,8 @@ class Model(object):
         with tf.variable_scope("", custom_getter=custom_getter, reuse=True):
             polyak_model = policy(sess, ob_space, ac_space, nenvs, nsteps + 1, nstack, reuse=True)
 
+        # grads, loss_policy, loss_q = self.get_gradient(train_model.pi, polyak_model.pi, train_model.q, MU, R, params)
+        # e_grads, e_loss_policy, e_loss_q = self.get_gradient(train_model.e_pi, polyak_model.e_pi, train_model.e_q, e_MU, e_R, e_params)
         grads, loss_policy, loss_q = self.get_gradient(train_model.pi, polyak_model.pi, train_model.q, MU, R, params)
         e_grads, e_loss_policy, e_loss_q = self.get_gradient(train_model.e_pi, polyak_model.e_pi, train_model.e_q, e_MU, e_R, e_params)
 
@@ -137,6 +139,8 @@ class Model(object):
         # Ops/Summaries to run, and their names for logging
         run_ops = [_train, loss_policy, loss_q, e_loss_policy, e_loss_q]
         names_ops = ['loss_policy', 'loss_q', 'e_loss_policy', 'e_loss_q']
+        # run_ops = [_train, loss_policy, loss_q, e_loss_policy, e_loss_q, qret, e_qret]
+        # names_ops = ['loss_policy', 'loss_q', 'e_loss_policy', 'e_loss_q']
         # run_ops = [_train, loss, loss_q, entropy, loss_policy, loss_f, loss_bc, ev, norm_grads]
         # names_ops = ['loss', 'loss_q', 'entropy', 'loss_policy', 'loss_f', 'loss_bc', 'explained_variance',
         #              'norm_grads']
@@ -272,6 +276,8 @@ class Runner(AbstractEnvRunner):
         obs = env.reset()
         self.update_obs(obs)
 
+        self.jump_record = [0] * (nenv + 1)
+
     def update_obs(self, obs, dones=None):
         if dones is not None:
             self.obs *= (1 - dones.astype(np.uint8))[:, None, None, None]
@@ -288,6 +294,16 @@ class Runner(AbstractEnvRunner):
                 actions, mus, e_mus, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
             else:
                 actions, mus, e_mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
+
+            for i in range(self.nenv):
+                if actions[i] == 3:
+                    if self.jump_record[i] >= 3:
+                        actions[i] = np.argmax(mus[i, :-1])
+                        self.jump_record[i] = 0
+                    else:
+                        self.jump_record[i] += 1
+                else:
+                    self.jump_record[i] = 0
 
             # print(mus)
             # print(e_mus)
@@ -308,7 +324,12 @@ class Runner(AbstractEnvRunner):
             e_rewards = -np.sum(mus*np.log(mus + 1e-5), axis=1)
             e_rewards[dones == True] = 0
             mb_e_rewards.append(e_rewards)
+
             enc_obs.append(obs)
+
+            for i in range(self.nenv):
+                if self.dones[i]:
+                    self.jump_record[i] = 0
         mb_obs.append(np.copy(self.obs))
         mb_dones.append(self.dones)
 
@@ -346,13 +367,26 @@ class Runner(AbstractEnvRunner):
         length_episode = 0
         while not done:
             actions, mus, e_mus, states = self.model.evaluate_step(e_obs)
+
+            if actions[0] == 3:
+                if self.jump_record[self.nenv] >= 3:
+                    actions[0] = np.argmax(mus[0, :-1])
+                    self.jump_record[self.nenv] = 0
+                else:
+                    self.jump_record[self.nenv] += 1
+            else:
+                self.jump_record[self.nenv] = 0
+
             obs, rew, done, info = env.step(actions)
             obs = np.concatenate([obs]*self.nenv, axis=0)
             e_obs = np.roll(e_obs, shift=-self.nc, axis=3)
             e_obs[:, :, :, -self.nc:] = obs[:, :, :, :]
             reward_episode += rew[0]
             length_episode += 1
-        return reward_episode ,length_episode
+
+            if done[0]:
+                self.jump_record[self.nenv] = 0
+        return reward_episode, length_episode
 
 class Acer():
     def __init__(self, runner, model, log_interval, evaluate_env, evaluate_interval, evaluate_n, logdir, load_info=None):
@@ -436,6 +470,8 @@ class Acer():
             for name, val in zip(names_ops, values_ops):
                 logger.record_tabular(name, float(val))
             logger.dump_tabular()
+            # print(values_ops[-2])
+            # print(values_ops[-1])
 
     def evaluate(self, env, n):
         reward_total = 0

@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from baselines.ppo2.policies import nature_cnn
-from baselines.a2c.utils import fc, batch_to_seq, seq_to_batch, lstm, sample
+from baselines.a2c.utils import fc, batch_to_seq, seq_to_batch, lstm #, sample
 
 
 class AcerCnnPolicy(object):
@@ -27,8 +27,10 @@ class AcerCnnPolicy(object):
                 # e_v = fc(nogradient_h, 'e_v', 1)[:, 0]
                 e_q = fc(nogradient_h, 'e_q', nact)
 
-        a = sample(pi_logits)  # could change this to use self.pi instead
-        evaluate_a = sample(pi_logits)
+        a = tf.squeeze(tf.multinomial(pi_logits, 1), 1)
+        # a = tf.argmax(pi_logits, 1)
+        # evaluate_a = sample(pi_logits)
+        evaluate_a = tf.argmax(pi_logits, 1)
 
         self.initial_state = []  # not stateful
         self.X = X
@@ -36,7 +38,8 @@ class AcerCnnPolicy(object):
         self.q = q
 
         # for explore
-        e_a = sample(e_pi_logits)  # could change this to use self.pi instead
+        # e_a = sample(e_pi_logits)  # could change this to use self.pi instead
+        e_a = tf.squeeze(tf.multinomial(e_pi_logits, 1), 1)
         self.e_pi_logits = e_pi_logits
         self.e_pi = e_pi
         # self.e_v = e_v
