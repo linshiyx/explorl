@@ -157,9 +157,9 @@ def main():
     #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16, logdir=logdir)
     game = 'SonicTheHedgehog-Genesis'
     state = 'SpringYardZone.Act1'
-    load_model_steps = 998
-    load_model_rewards = 4445
-    load_path = "logs/0_628/{}_{}".format(load_model_steps, load_model_rewards)
+    load_model_steps = 3833
+    load_model_rewards = 4948
+    load_path = "logs/0_628_998/{}_{}".format(load_model_steps, load_model_rewards)
     load_info = {'path': load_path,
                  'steps': load_model_steps,
                  'rewards': load_model_rewards}

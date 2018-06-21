@@ -272,6 +272,8 @@ class Runner(AbstractEnvRunner):
         obs = env.reset()
         self.update_obs(obs)
 
+        self.max_progress = [0] * self.nenv
+
     def update_obs(self, obs, dones=None):
         if dones is not None:
             self.obs *= (1 - dones.astype(np.uint8))[:, None, None, None]
@@ -284,7 +286,8 @@ class Runner(AbstractEnvRunner):
         mb_e_mus, mb_e_rewards = [], []
         for _ in range(self.nsteps):
             # actions, mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
-            if explore:
+            # if explore:
+            if 6847 > self.max_progress[i] > 6200:
                 actions, mus, e_mus, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
             else:
                 actions, mus, e_mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
@@ -309,6 +312,14 @@ class Runner(AbstractEnvRunner):
             e_rewards[dones == True] = 0
             mb_e_rewards.append(e_rewards)
             enc_obs.append(obs)
+
+            for i in range(self.nenv):
+                if dones[i]:
+                    self.max_progress[i] = 0
+                else:
+                    if rewards[i] > 0:
+                        self.max_progress[i] += rewards[i]
+
         mb_obs.append(np.copy(self.obs))
         mb_dones.append(self.dones)
 

@@ -163,7 +163,13 @@ def main():
     # load_info = {'path': load_path,
     #              'steps': load_model_steps,
     #              'rewards': load_model_rewards}
-    load_info=None
+    load_model_steps = 329
+    load_model_rewards = 1871
+    load_path = "logs/1/{}_{}".format(load_model_steps, load_model_rewards)
+    load_info = {'path': load_path,
+                 'steps': load_model_steps,
+                 'rewards': load_model_rewards}
+    # load_info=None
     train(game=game, state=state, num_timesteps=1e8, seed=args.seed, policy=args.policy,
           lrschedule=args.lrschedule, num_cpu=1, logdir=logdir, load_info=load_info)
 
