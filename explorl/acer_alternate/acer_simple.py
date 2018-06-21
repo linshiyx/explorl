@@ -274,6 +274,7 @@ class Runner(AbstractEnvRunner):
         self.update_obs(obs)
 
         self.max_progress = [0] * self.nenv
+        self.progress = [0] * self.nenv
 
     def update_obs(self, obs, dones=None):
         if dones is not None:
@@ -297,7 +298,7 @@ class Runner(AbstractEnvRunner):
             # print('mus: ', mus)
             # print('e_mus: ', e_mus, '\n')
             for i in range(self.nenv):
-                if 6847 > self.max_progress[i] > 6200:
+                if 6847 > self.progress[i] > 6200:
                     actions[i] = e_actions[i]
             # print(mus)
             # print(e_mus)
@@ -323,7 +324,9 @@ class Runner(AbstractEnvRunner):
             for i in range(self.nenv):
                 if dones[i]:
                     self.max_progress[i] = 0
+                    self.progress[i] = 0
                 else:
+                    self.progress[i] += rewards[i]
                     if rewards[i] > 0:
                         self.max_progress[i] += rewards[i]
 
