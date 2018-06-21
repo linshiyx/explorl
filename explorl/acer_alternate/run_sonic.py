@@ -14,6 +14,7 @@ from baselines.common.vec_env import subproc_vec_env
 from baselines.common import set_global_seeds
 from retro_contest.local import make
 from baselines.bench import Monitor
+from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 
 import datetime
 import os
@@ -23,6 +24,41 @@ import time
 np.set_printoptions(precision=2, suppress=True)
 
 is_remote = (os.getcwd() == "/root/compo")
+
+
+class _GetchUnix:
+    def __init__(self):
+        import tty, sys
+
+    def __call__(self):
+        import sys, tty, termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return self.action_key_mapping(ch)
+
+    def action_key_mapping(self, key_action):
+        map_action = 0
+
+        if key_action == 'a':
+            map_action = 0
+        elif key_action == 'd':
+            map_action = 1
+        elif key_action == 's':
+            map_action = 2
+        elif key_action == 'f':
+            map_action = 3
+        elif key_action == 'u':
+            exit()
+
+        return map_action
+
+getch = _GetchUnix()
+
 
 def make_sonic_env(game, state, num_env, seed, scale_rew=True, start_index=0, render=False, wrapper_kwargs=None):
     """
@@ -36,7 +72,9 @@ def make_sonic_env(game, state, num_env, seed, scale_rew=True, start_index=0, re
     set_global_seeds(seed)
     return subproc_vec_env.SubprocVecEnv([env_id_decorator(i + start_index, scale_rew=scale_rew, render=render) for i in range(num_env)])
 
-def make_env(stack=True, scale_rew=True, game=None, state=None, seed=0, render=False):
+# def make_env(stack=True, scale_rew=True, game=None, state=None, seed=0, render=False):
+def make_env(stack=True, scale_rew=True, game='SonicTheHedgehog-Genesis',
+             state='SpringYardZone.Act1', seed=0, render=True):
     """
     Create an environment with some standard wrappers.
     """
@@ -91,6 +129,13 @@ class SonicDiscretizer(gym.ActionWrapper):
             time.sleep(0.05)
         return self._actions[a].copy()
 
+    # def step(self, action):
+    #     key_action = getch()
+    #     arr_action = self.action(key_action)
+    #     obs, rew, done, info = self.env.step(arr_action)
+    #     return obs, rew, done, info
+
+
 class RewardScaler(gym.RewardWrapper):
     """
     Bring rewards to a reasonable scale for PPO.
@@ -133,6 +178,9 @@ def train(game, state, num_timesteps, seed, policy, lrschedule, num_cpu, logdir,
     set_global_seeds(seed)
     env = make_sonic_env(game=game, state=state, num_env=num_cpu, seed=0, render=False)
     evaluate_env = make_sonic_env(game=game, state=state, num_env=1, seed=1000, scale_rew=False)
+    # for human play
+    # env = DummyVecEnv([make_env])
+    # evaluate_env = None
     if policy == 'cnn':
         policy_fn = AcerCnnPolicy
     elif policy == 'lstm':

@@ -59,9 +59,10 @@ class Model(object):
                  ent_coef, q_coef, e_vf_coef, gamma, max_grad_norm, lr,
                  rprop_alpha, rprop_epsilon, total_timesteps, lrschedule,
                  c, trust_region, alpha, delta):
-        config = tf.ConfigProto(# allow_soft_placement=True,
-                                intra_op_parallelism_threads=num_procs,
-                                inter_op_parallelism_threads=num_procs)
+        # config = tf.ConfigProto(# allow_soft_placement=True,
+        #                         intra_op_parallelism_threads=num_procs,
+        #                         inter_op_parallelism_threads=num_procs)
+        config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         sess = tf.Session(config=config)
         nact = ac_space.n
@@ -293,6 +294,8 @@ class Runner(AbstractEnvRunner):
             #     actions, mus, e_mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
 
             actions, e_actions, mus, e_mus, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
+            # print('mus: ', mus)
+            # print('e_mus: ', e_mus, '\n')
             for i in range(self.nenv):
                 if 6847 > self.max_progress[i] > 6200:
                     actions[i] = e_actions[i]
@@ -479,7 +482,8 @@ def learn(policy, env, evaluate_env, seed, nsteps=20, nstack=4, total_timesteps=
     nenvs = env.num_envs
     ob_space = env.observation_space
     ac_space = env.action_space
-    num_procs = len(env.remotes) # HACK
+    # num_procs = len(env.remotes) # HACK
+    num_procs = 1 # HACK
     model = Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nenvs=nenvs, nsteps=nsteps, nstack=nstack,
                   num_procs=num_procs, ent_coef=ent_coef, q_coef=q_coef, e_vf_coef=q_coef, gamma=gamma,
                   max_grad_norm=max_grad_norm, lr=lr, rprop_alpha=rprop_alpha, rprop_epsilon=rprop_epsilon,
