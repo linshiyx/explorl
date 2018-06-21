@@ -287,11 +287,15 @@ class Runner(AbstractEnvRunner):
         for _ in range(self.nsteps):
             # actions, mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
             # if explore:
-            if 6847 > self.max_progress[i] > 6200:
-                actions, mus, e_mus, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
-            else:
-                actions, mus, e_mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
+            # if 6847 > self.max_progress[i] > 6200:
+            #     actions, mus, e_mus, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
+            # else:
+            #     actions, mus, e_mus, states = self.model.step(self.obs, state=self.states, mask=self.dones)
 
+            actions, e_actions, mus, e_mus, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
+            for i in range(self.nenv):
+                if 6847 > self.max_progress[i] > 6200:
+                    actions[i] = e_actions[i]
             # print(mus)
             # print(e_mus)
             # print(actions)

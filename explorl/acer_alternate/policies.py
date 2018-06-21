@@ -54,8 +54,8 @@ class AcerCnnPolicy(object):
 
         # for explore
         def e_step(ob, *args, **kwargs):
-            e_a0, pi0, e_pi0 = sess.run([e_a, pi, e_pi], {X: ob})
-            return e_a0, pi0, e_pi0, []  # dummy state
+            a0, e_a0, pi0, e_pi0 = sess.run([a, e_a, pi, e_pi], {X: ob})
+            return a0, e_a0, pi0, e_pi0, []  # dummy state
         self.e_step = e_step
 
         def out(ob, *args, **kwargs):
