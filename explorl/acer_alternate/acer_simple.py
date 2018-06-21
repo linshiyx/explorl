@@ -438,6 +438,8 @@ class Acer():
             if rewards_mean > self.best_mean_reward:
                 self.best_mean_reward = rewards_mean
                 self.model.save(self.logdir + '/' + str(int(steps // 1e4)) + '_' + str(int(rewards_mean)))
+            elif int(steps/runner.nbatch) % (self.evaluate_interval*10) == 0:
+                self.model.save(self.logdir + '/' + str(int(steps // 1e4)) + '_' + str(int(rewards_mean)))
 
 
         if on_policy and (int(steps/runner.nbatch) % self.log_interval == 0):
