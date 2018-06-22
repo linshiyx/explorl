@@ -297,9 +297,12 @@ class Runner(AbstractEnvRunner):
             actions, e_actions, mus, e_mus, states = self.model.e_step(self.obs, state=self.states, mask=self.dones)
             # print('mus: ', mus)
             # print('e_mus: ', e_mus, '\n')
+            print(self.progress[0])
             for i in range(self.nenv):
-                if 6847 > self.progress[i] > 6200:
+                if 68.47 > self.progress[i] > 62:
                     actions[i] = e_actions[i]
+                    # print('exploring: ', actions[i])
+                    # time.sleep(0.02)
             # print(mus)
             # print(e_mus)
             # print(actions)

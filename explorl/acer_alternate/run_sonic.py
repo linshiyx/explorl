@@ -126,7 +126,7 @@ class SonicDiscretizer(gym.ActionWrapper):
     def action(self, a): # pylint: disable=W0221
         if self.render:
             self.env.render()
-            time.sleep(0.05)
+            time.sleep(0.03)
         return self._actions[a].copy()
 
     # def step(self, action):
@@ -205,9 +205,17 @@ def main():
     #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16, logdir=logdir)
     game = 'SonicTheHedgehog-Genesis'
     state = 'SpringYardZone.Act1'
-    load_model_steps = 3833
-    load_model_rewards = 4948
-    load_path = "logs/0_628_998/{}_{}".format(load_model_steps, load_model_rewards)
+    # load_model_steps = 3833
+    # load_model_rewards = 4948
+    # load_path = "logs/0_628_998/{}_{}".format(load_model_steps, load_model_rewards)
+    # load_info = {'path': load_path,
+    #              'steps': load_model_steps,
+    #              'rewards': load_model_rewards}
+    load_model_steps = 4992
+    load_model_rewards = 5163
+    # load_model_steps = 8047
+    # load_model_rewards = 6426
+    load_path = "logs/0_628_998_3833/{}_{}".format(load_model_steps, load_model_rewards)
     load_info = {'path': load_path,
                  'steps': load_model_steps,
                  'rewards': load_model_rewards}
