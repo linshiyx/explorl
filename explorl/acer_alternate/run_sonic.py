@@ -72,6 +72,7 @@ def make_sonic_env(game, state, num_env, seed, scale_rew=True, start_index=0, re
     set_global_seeds(seed)
     return subproc_vec_env.SubprocVecEnv([env_id_decorator(i + start_index, scale_rew=scale_rew, render=render) for i in range(num_env)])
 
+
 # def make_env(stack=True, scale_rew=True, game=None, state=None, seed=0, render=False):
 def make_env(stack=True, scale_rew=True, game='SonicTheHedgehog-Genesis',
              state='SpringYardZone.Act1', seed=0, render=True):
@@ -215,7 +216,8 @@ def main():
     load_model_rewards = 5163
     # load_model_steps = 8047
     # load_model_rewards = 6426
-    load_path = "logs/0_628_998_3833/{}_{}".format(load_model_steps, load_model_rewards)
+    # load_path = "logs/0_628_998_3833/{}_{}".format(load_model_steps, load_model_rewards)
+    load_path = "logs/3833_4992/{}_{}".format(load_model_steps, load_model_rewards)
     load_info = {'path': load_path,
                  'steps': load_model_steps,
                  'rewards': load_model_rewards}

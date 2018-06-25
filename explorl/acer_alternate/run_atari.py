@@ -2,8 +2,33 @@
 from baselines import logger
 from explorl.acer_alternate.acer_simple import learn
 from explorl.acer_alternate.policies import AcerCnnPolicy, AcerLstmPolicy
-from baselines.common.cmd_util import make_atari_env, atari_arg_parser
+from baselines.common.cmd_util import atari_arg_parser #, make_atari_env
+
 import datetime
+
+# for collect env start =====================
+from baselines.bench import Monitor
+from baselines.common.atari_wrappers import make_atari, wrap_deepmind
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+import os
+from env.collect import Collect
+def make_atari_env(env_id, num_env, seed, wrapper_kwargs=None, start_index=0):
+    """
+    Create a wrapped, monitored SubprocVecEnv for Atari.
+    """
+    if wrapper_kwargs is None: wrapper_kwargs = {}
+    def make_env(rank): # pylint: disable=C0111
+        def _thunk():
+            # env = make_atari(env_id)
+            env = Collect()
+            env.seed(seed + rank)
+            env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)), allow_early_resets=True)
+            # return wrap_deepmind(env, **wrapper_kwargs)
+            return env
+        return _thunk
+    # set_global_seeds(seed)
+    return SubprocVecEnv([make_env(i + start_index) for i in range(num_env)])
+# for collect env end =====================
 
 def train(env_id, num_timesteps, seed, policy, lrschedule, num_cpu, logdir):
     env = make_atari_env(env_id, num_cpu, seed)
