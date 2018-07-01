@@ -54,7 +54,7 @@ def main():
     logdir = './logs/'+datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d-%H%M%S')
     logger.configure(logdir)
     train(args.env, num_timesteps=1e8, seed=args.seed,
-          policy=args.policy, lrschedule=args.lrschedule, num_cpu=2, logdir=logdir)
+          policy=args.policy, lrschedule=args.lrschedule, num_cpu=16, logdir=logdir)
     # train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
     #       policy=args.policy, lrschedule=args.lrschedule, num_cpu=16)
 

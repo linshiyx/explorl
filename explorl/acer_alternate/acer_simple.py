@@ -298,9 +298,9 @@ class Runner(AbstractEnvRunner):
             # print('mus: ', mus)
             # print('e_mus: ', e_mus, '\n')
             # print(self.progress[0])
-            for i in range(self.nenv):
-                if 68.47 > self.progress[i] > 62:
-                    actions[i] = e_actions[i]
+            # for i in range(self.nenv):
+            #     if 68.47 > self.progress[i] > 62:
+            #         actions[i] = e_actions[i]
                     # print('exploring: ', actions[i])
                     # time.sleep(0.02)
             # print(mus)
@@ -308,7 +308,8 @@ class Runner(AbstractEnvRunner):
             # print(actions)
 
             mb_obs.append(np.copy(self.obs))
-            mb_actions.append(actions)
+            # mb_actions.append(actions)
+            mb_actions.append(e_actions)
             mb_mus.append(mus)
             mb_e_mus.append(e_mus)
             mb_dones.append(self.dones)
@@ -324,14 +325,14 @@ class Runner(AbstractEnvRunner):
             mb_e_rewards.append(e_rewards)
             enc_obs.append(obs)
 
-            for i in range(self.nenv):
-                if dones[i]:
-                    self.max_progress[i] = 0
-                    self.progress[i] = 0
-                else:
-                    self.progress[i] += rewards[i]
-                    if rewards[i] > 0:
-                        self.max_progress[i] += rewards[i]
+            # for i in range(self.nenv):
+            #     if dones[i]:
+            #         self.max_progress[i] = 0
+            #         self.progress[i] = 0
+            #     else:
+            #         self.progress[i] += rewards[i]
+            #         if rewards[i] > 0:
+            #             self.max_progress[i] += rewards[i]
 
         mb_obs.append(np.copy(self.obs))
         mb_dones.append(self.dones)
